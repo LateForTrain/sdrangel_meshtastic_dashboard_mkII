@@ -1,0 +1,29 @@
+[project]
+name = "meshtastic-sdrangel-frontend"
+version = "0.1.0"
+description = "Meshtastic SDRangel Frontend with FastAPI + Asyncio"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.30.0",
+    "meshtastic>=2.7.8",           # Official library (for decoding)
+    "tinydb>=4.8.0",
+    "python-dotenv>=1.0.1",
+    "pydantic>=2.9.0",
+    "jinja2>=3.1.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "black",
+    "ruff",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[tool.uv]
+dev-dependencies = ["meshtastic-sdrangel-frontend[dev]"]
+
+[tool.ruff]
+line-length = 100
