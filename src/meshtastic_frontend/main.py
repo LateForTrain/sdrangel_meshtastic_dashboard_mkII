@@ -7,7 +7,13 @@ from fastapi import FastAPI
 from .config import config
 from .models import RawPacketEvent, DecodedMeshPacket, AppEvent
 from .queues import raw_packet_queue, decoded_packet_queue, broadcast_queue
+from .task_manager import reliable_task
+from .web.app import create_app as create_web_app
 
+# Import tasks
+from .udp_listener import udp_listener_task
+from .decoder import decoder_task
+from .db_manager import db_manager_task
 
 logger = logging.getLogger(__name__)
 
@@ -19,35 +25,40 @@ async def lifespan(app: FastAPI):
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
     )
     
-    logger.info("🚀 Starting Meshtastic SDRangel Frontend...")
-    logger.info(f"Listening for UDP on {config.udp_host}:{config.udp_port}")
-    logger.info(f"Web UI will be available at http://localhost:{config.api_port}")
+    logger.info("Starting Meshtastic SDRangel Frontend...")
 
-    # TODO: Start background tasks later
-    tasks = []
+    # Start background tasks
+    tasks = [
+    asyncio.create_task(reliable_task(udp_listener_task, "UDP Listener", restart_delay=2.0)),
+    asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder")),
+    asyncio.create_task(reliable_task(db_manager_task, "Database Manager")),
+    ]
 
+    logger.info("Background tasks started")
+    logger.info(f"UDP listening on {config.udp_host}:{config.udp_port}")
+
+    app.state.background_tasks = tasks  # Optional: store for reference
+    
     try:
         yield
     finally:
-        logger.info("Shutting down...")
+        logger.info("Shutting down background tasks...")
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        logger.info("All tasks stopped.")
 
 
-# Simple placeholder app for now
 def create_app() -> FastAPI:
-    app = FastAPI(title="Meshtastic SDRangel Frontend", lifespan=lifespan)
-    
-    @app.get("/")
-    async def root():
-        return {
-            "message": "Meshtastic SDRangel Frontend is running!",
-            "status": "ok"
-        }
-    
+    """Create the FastAPI application"""
+
+    app = create_web_app(lifespan=lifespan)
     return app
 
 
 async def main():
-    """Entry point with better shutdown handling"""
+    """Entry point"""
     app = create_app()
     
     config_uv = uvicorn.Config(
@@ -64,10 +75,8 @@ async def main():
     except asyncio.CancelledError:
         logger.info("Shutdown requested...")
     except KeyboardInterrupt:
-        logger.info("Keyboard interrupt received. Shutting down gracefully...")
+        logger.info("Keyboard interrupt received...")
     finally:
-        # Give tasks time to clean up
-        await asyncio.sleep(0.1)
         logger.info("Server stopped.")
 
 

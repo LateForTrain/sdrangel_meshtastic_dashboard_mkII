@@ -4,13 +4,13 @@ from typing import Any, Dict, Optional
 
 
 def utcnow() -> datetime:
-    """Timezone-aware UTC now (replacement for deprecated utcnow())"""
     return datetime.now(timezone.utc)
 
 
+# ── Queue Events ─────────────────────────────────────────────────────────────
+
 @dataclass
 class RawPacketEvent:
-    """Raw UDP packet received from SDRangel"""
     data: bytes
     timestamp: datetime = field(default_factory=utcnow)
     source_ip: Optional[str] = None
@@ -19,7 +19,7 @@ class RawPacketEvent:
 
 @dataclass
 class DecodedMeshPacket:
-    """Decoded Meshtastic packet"""
+    """Intermediate container after decoding"""
     packet: Dict[str, Any]
     raw_bytes: bytes
     timestamp: datetime = field(default_factory=utcnow)
@@ -27,9 +27,67 @@ class DecodedMeshPacket:
     packet_type: str = "unknown"
 
 
+# ── Domain Models (for Database + Dashboard) ─────────────────────────────────
+
+@dataclass
+class Node:
+    node_id: int
+    long_name: Optional[str] = None
+    short_name: Optional[str] = None
+    hw_model: Optional[str] = None
+    last_seen: datetime = field(default_factory=utcnow)
+    first_seen: datetime = field(default_factory=utcnow)
+    channel: Optional[str] = None
+
+
+@dataclass
+class Position:
+    node_id: int
+    latitude: float
+    longitude: float
+    altitude: Optional[int] = None
+    timestamp: datetime = field(default_factory=utcnow)
+    gps_time: Optional[datetime] = None
+    precision: Optional[int] = None
+
+
+@dataclass
+class TextMessage:
+    node_id: int                    # Sender (main field for queries)
+    from_node: int
+    to_node: int
+    text: str
+    timestamp: datetime = field(default_factory=utcnow)
+    channel: Optional[str] = None
+    packet_id: Optional[int] = None     # Meshtastic packet ID
+
+
+@dataclass
+class Telemetry:
+    node_id: int
+    telemetry_type: str = "DEVICE"
+    timestamp: datetime = field(default_factory=utcnow)
+    
+    # Device metrics
+    battery: Optional[int] = None
+    voltage: Optional[float] = None
+    channel_util: Optional[float] = None
+    air_util_tx: Optional[float] = None
+    uptime_seconds: Optional[int] = None
+    
+    # Environment metrics
+    temperature: Optional[float] = None
+    humidity: Optional[float] = None
+    pressure: Optional[float] = None
+    iaq: Optional[int] = None
+    
+    # Signal metrics
+    snr: Optional[float] = None
+    rssi: Optional[int] = None
+
+
 @dataclass
 class AppEvent:
-    """Generic internal event for broadcasting"""
     event_type: str
     payload: Any
     timestamp: datetime = field(default_factory=utcnow)

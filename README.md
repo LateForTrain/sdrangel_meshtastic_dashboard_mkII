@@ -6,7 +6,7 @@
 - Python 3.11+
 - Asyncio + `asyncio.Queue`
 - FastAPI (with WebSockets)
-- TinyDB
+- sqlalchemy
 - Official `meshtastic` Python library (decoding only)
 - Dataclasses (avoiding Pydantic for core models)
 - Uvicorn
@@ -18,19 +18,42 @@
 - Clean separation of concerns
 - WebSocket support for real-time updates
 
+## Folder Structure
+meshtastic-sdrangel-frontend/
+├── src/
+│   └── meshtastic_frontend/
+│       ├── __init__.py
+│       ├── main.py                 # Phase 1
+│       ├── config.py               # Phase 1
+│       ├── dataclasses.py          # Phase 1
+│       ├── queues.py               # Phase 1
+│       ├── task_manager.py         # Phase 1
+│       ├── udp_listener.py         # Phase 3
+│       ├── decoder.py              # Phase 3
+│       ├── models.py               # Phase 4
+│       ├── db_manager.py           # Phase 4
+│       └── web/
+│           ├── __init__.py
+│           ├── app.py              # Phase 2
+│           ├── routes.py
+│           └── templates/
+│               └── index.html      # Phase 5
+├── tests/
+├── pyproject.toml
+├── requirements.txt
+├── README.md
+└── .env
 ---
 
-## Current Status (Updated: 2026-05-03)
+## Current Status (Updated: 2026-05-09)
 
-**Phase 1: Foundation** → ✅ Completed  
-**Phase 2: Web Layer** → In Progress (basic FastAPI running)
+**Phase 1: Foundation** → Done
+**Phase 2: FastAPI app** → Done
+**Phase 3: UDP Listener & Mesh Decoder** → Done
+**Phase 4: Database Manager** → Done
 
 ### Next Steps (Agreed Order)
-1. Complete Phase 2: Basic FastAPI + **WebSocket** endpoint + improved homepage
-2. Get UDP Listener running
-3. Get Meshtastic Decoder running
-4. Connect everything + update database
-5. Build dynamic frontend pages
+1. Build dynamic frontend pages
 
 ---
 

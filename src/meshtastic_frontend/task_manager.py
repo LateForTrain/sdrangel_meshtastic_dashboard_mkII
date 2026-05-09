@@ -4,7 +4,6 @@ from typing import Awaitable, Callable
 
 logger = logging.getLogger(__name__)
 
-
 async def reliable_task(
     coro_func: Callable[[], Awaitable[None]],
     task_name: str,
