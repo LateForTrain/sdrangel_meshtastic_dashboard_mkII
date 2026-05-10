@@ -16,6 +16,6 @@ class Config:
     db_name: str = os.getenv("DB_NAME", "app.db")
     debug_active: bool = os.getenv("DEBUG_ACTIVE", "False")
     debug_log: str = os.getenv("DEBUG_LOG","debug.json")
-
+    mesh_key: str = os.getenv("MESH_KEY", "1PG7OiApB1nwvP+rz05pAQ==")
 
 config = Config()

@@ -24,7 +24,7 @@ class MeshtasticUDPProtocol(asyncio.DatagramProtocol):
                 source_port=addr[1]
             )
             
-            raw_packet_queue.put_nowait(event)   # Fast path
+            raw_packet_queue.put_nowait(event)
             logger.debug(f"Queued {len(data)} bytes from {addr}")
 
         except asyncio.QueueFull:

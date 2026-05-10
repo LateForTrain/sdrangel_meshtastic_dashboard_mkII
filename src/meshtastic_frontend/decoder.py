@@ -16,9 +16,9 @@ from .queues import raw_packet_queue, decoded_packet_queue
 logger = logging.getLogger(__name__)
 
 # Default LongFast channel key (public)
-DEFAULT_KEY = base64.b64decode('1PG7OiApB1nwvP+rz05pAQ==')
+DEFAULT_KEY = base64.b64decode(config.mesh_key)
 
-logger.info("Decoder initialized with default LongFast key")
+logger.info("Decoder initialized with default key")
 
 
 def parse_lora_header(data: bytes) -> Dict[str, Any]:
@@ -47,7 +47,8 @@ def parse_lora_header(data: bytes) -> Dict[str, Any]:
 
 
 def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) -> Optional[bytes]:
-    """Decrypt Meshtastic AES-CTR payload"""
+    """Decrypt Meshtastic AES-CTR payload
+    """
     try:
         nonce = packet_id.to_bytes(8, 'little') + from_node.to_bytes(8, 'little')
         cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
@@ -59,7 +60,8 @@ def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) 
 
 
 def decode_payload(plaintext: bytes) -> Dict[str, Any]:
-    """Decode protobuf payload - supports most common Meshtastic packet types"""
+    """Decode protobuf payload - supports most common Meshtastic packet types
+    """
     result: Dict[str, Any] = {}
 
     try:
@@ -70,11 +72,11 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
         result['portnum'] = portnums_pb2.PortNum.Name(portnum)
         result['portnum_id'] = portnum
 
-        # ── Text Message ─────────────────────────────────────
+        # Text Message
         if portnum == portnums_pb2.TEXT_MESSAGE_APP:
             result['text'] = data.payload.decode('utf-8', errors='replace')
 
-        # ── Position ─────────────────────────────────────────
+        # Position
         elif portnum == portnums_pb2.POSITION_APP:
             pos = mesh_pb2.Position()
             pos.ParseFromString(data.payload)
@@ -85,7 +87,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
             if pos.time:
                 result['gps_time'] = datetime.fromtimestamp(pos.time, tz=timezone.utc).isoformat()
 
-        # ── Node Info ────────────────────────────────────────
+        # Node Info
         elif portnum == portnums_pb2.NODEINFO_APP:
             user = mesh_pb2.User()
             user.ParseFromString(data.payload)
@@ -94,7 +96,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
             result['short_name'] = user.short_name
             result['hw_model'] = user.hw_model
 
-        # ── Telemetry (Most Common) ──────────────────────────
+        # Telemetry (Most Common)
         elif portnum == portnums_pb2.TELEMETRY_APP:
             tele = telemetry_pb2.Telemetry()
             tele.ParseFromString(data.payload)
@@ -135,14 +137,14 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
                     'rssi': m.rssi,
                 })
 
-        # ── Traceroute ───────────────────────────────────────
+        # Traceroute
         elif portnum == portnums_pb2.TRACEROUTE_APP:
             trace = mesh_pb2.RouteDiscovery()
             trace.ParseFromString(data.payload)
             result['route'] = [f'0x{hop:08x}' for hop in trace.route]
             result['snr_towards'] = list(trace.snr_towards)
 
-        # ── Neighbor Info ────────────────────────────────────
+        # Neighbor Info
         elif portnum == portnums_pb2.NEIGHBORINFO_APP:
             neigh = mesh_pb2.NeighborInfo()
             neigh.ParseFromString(data.payload)
@@ -155,7 +157,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
                 } for n in neigh.neighbors
             ]
 
-        # ── Routing ──────────────────────────────────────────
+        # Routing
         elif portnum == portnums_pb2.ROUTING_APP:
             routing = mesh_pb2.Routing()
             routing.ParseFromString(data.payload)
@@ -163,7 +165,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
             if routing.HasField('error_reason'):
                 result['error_reason'] = mesh_pb2.Routing.Error.Reason.Name(routing.error_reason)
 
-        # ── Unknown / Raw fallback ───────────────────────────
+        # Unknown / Raw fallback
         else:
             result['raw_payload_hex'] = data.payload.hex()
 
@@ -175,10 +177,11 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
 
 
 async def decoder_task():
-    """Background task that decodes raw Meshtastic packets"""
+    """Background task that decodes raw Meshtastic packets
+    """
     logger.info("Meshtastic Decoder Task started")
 
-    key = DEFAULT_KEY  # TODO: Make configurable per channel later
+    key = DEFAULT_KEY
 
     while True:
         try:
@@ -227,10 +230,11 @@ async def decoder_task():
                 # Put on decoded queue
                 await decoded_packet_queue.put(decoded_packet)
 
-                # Nice log
+                # Logging 
                 port = decoded_payload.get('portnum', 'UNKNOWN')
-                logger.info(f"Decoded {port} from {header['from']} "
-                          f"({len(data)} bytes)")
+                if port != 'UNKNOWN':
+                    logger.info(f"Decoded {port} from {header['from']} "
+                            f"({len(data)} bytes)")
 
             except Exception as e:
                 logger.error(f"Failed to decode packet from {raw_event.source_ip}: {e}", exc_info=True)

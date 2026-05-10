@@ -1,20 +1,20 @@
 # Core web framework
-fastapi>=0.115.0
-uvicorn[standard]>=0.30.0
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
 
 # Async database
-sqlalchemy[asyncio]>=2.0.35
-aiosqlite>=0.20.0
+sqlalchemy[asyncio]==2.0.49
+aiosqlite==0.22.1
 
 # Meshtastic protocol
-meshtastic>=2.5.0
+meshtastic==2.7.8
 
 # Cryptography for decryption
-cryptography>=43.0.0
+cryptography==48.0.0
 
 # Background task reliability & utilities
-python-dotenv>=1.0.1
+python-dotenv==1.2.2
 
 # Optional but recommended for dashboard later
-jinja2>=3.1.4
-websockets>=13.0
+jinja2==3.1.6
+websockets==16.0

@@ -1,3 +1,7 @@
+"""
+This file contains data classes used to represent various events and domain models in a networked device management system.
+These data classes are designed to organize and structure the data for efficient use throughout the application.
+"""
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -7,7 +11,7 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# ── Queue Events ─────────────────────────────────────────────────────────────
+# Queue Events 
 
 @dataclass
 class RawPacketEvent:
@@ -27,7 +31,7 @@ class DecodedMeshPacket:
     packet_type: str = "unknown"
 
 
-# ── Domain Models (for Database + Dashboard) ─────────────────────────────────
+# Domain Models (for Database + Dashboard)
 
 @dataclass
 class Node:

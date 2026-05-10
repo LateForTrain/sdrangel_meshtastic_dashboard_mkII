@@ -3,19 +3,126 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meshtastic SDRangel Dashboard</title>
+    <title>Meshtastic Live</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background: #0f172a; color: #e2e8f0; }
-        h1 { color: #60a5fa; }
-        .status { padding: 10px; background: #1e2937; border-radius: 8px; }
+        body {
+            font-family: system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 15px;
+        }
+        h1 {
+            color: #60a5fa;
+            margin-bottom: 10px;
+        }
+        .status {
+            color: #4ade80;
+            font-size: 0.95rem;
+        }
+        .messages {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        .message {
+            background: #1e2937;
+            padding: 12px 15px;
+            border-radius: 8px;
+            max-width: 90%;
+        }
+        .meta {
+            font-size: 0.8rem;
+            color: #94a3b8;
+            margin-bottom: 4px;
+        }
+        .text {
+            font-size: 1.05rem;
+            line-height: 1.4;
+        }
+        .empty {
+            color: #64748b;
+            font-style: italic;
+        }
     </style>
 </head>
 <body>
-    <h1>🚀 Meshtastic SDRangel Frontend</h1>
-    <div class="status">
-        <p>Server is running successfully!</p>
-        <p>UDP Listener: Port {{ udp_port }}</p>
+    <h1>🚀 Meshtastic Live</h1>
+    <div class="status">● Connected to SDRangel • UDP {{ udp_port | default(9999) }}</div>
+
+    <div class="messages" id="messages">
+        <!-- Messages will be added here by JavaScript -->
+        <div class="empty" id="empty">Waiting for messages...</div>
     </div>
-    <p><a href="/docs">Open FastAPI Docs</a></p>
+
+    <script>
+        let ws = null;
+        const messagesDiv = document.getElementById('messages');
+        const emptyDiv = document.getElementById('empty');
+        let reconnectAttempts = 0;
+        const maxReconnectAttempts = 10;
+
+        function connectWebSocket() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+
+            ws.onopen = () => {
+                console.log("✅ WebSocket connected");
+                reconnectAttempts = 0;
+                const status = document.createElement('div');
+                status.textContent = "Connected ✓";
+                status.style.color = "#4ade80";
+                status.style.fontSize = "0.9rem";
+                // You can show connection status in UI if you want
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    
+                    if (data.type === "history") {
+                        emptyDiv.style.display = "none";
+                        data.messages.forEach(msg => addMessage(msg));
+                    } 
+                    else if (data.type === "new_message") {
+                        emptyDiv.style.display = "none";
+                        addMessage(data.payload);
+                    }
+                } catch (err) {
+                    console.error("Parse error:", err);
+                }
+            };
+
+            ws.onclose = () => {
+                console.log("WebSocket closed. Attempting to reconnect...");
+                if (reconnectAttempts < maxReconnectAttempts) {
+                    reconnectAttempts++;
+                    const delay = Math.min(2000 * reconnectAttempts, 10000); // max 10s
+                    setTimeout(connectWebSocket, delay);
+                }
+            };
+
+            ws.onerror = (err) => {
+                console.error("WebSocket error:", err);
+            };
+        }
+
+        function addMessage(msg) {
+            const div = document.createElement('div');
+            div.className = 'message';
+            div.innerHTML = `
+                <div class="meta">${msg.timestamp} • ${msg.from_node}</div>
+                <div class="text">${msg.text}</div>
+            `;
+            messagesDiv.insertBefore(div, messagesDiv.firstChild);
+
+            if (messagesDiv.children.length > 50) {
+                messagesDiv.removeChild(messagesDiv.lastChild);
+            }
+        }
+
+        // Start connection
+        connectWebSocket();
+    </script>
 </body>
 </html>

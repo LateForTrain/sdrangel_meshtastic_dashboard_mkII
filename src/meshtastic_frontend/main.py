@@ -5,8 +5,6 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .config import config
-from .models import RawPacketEvent, DecodedMeshPacket, AppEvent
-from .queues import raw_packet_queue, decoded_packet_queue, broadcast_queue
 from .task_manager import reliable_task
 from .web.app import create_app as create_web_app
 
@@ -17,9 +15,10 @@ from .db_manager import db_manager_task
 
 logger = logging.getLogger(__name__)
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """Lifespan handler for the FastAPI application
+    """
     logging.basicConfig(
         level=getattr(logging, config.log_level),
         format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
@@ -29,15 +28,14 @@ async def lifespan(app: FastAPI):
 
     # Start background tasks
     tasks = [
-    asyncio.create_task(reliable_task(udp_listener_task, "UDP Listener", restart_delay=2.0)),
-    asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder")),
-    asyncio.create_task(reliable_task(db_manager_task, "Database Manager")),
+        asyncio.create_task(reliable_task(udp_listener_task, "UDP Listener", restart_delay=2.0)),
+        asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder", restart_delay=2.0)),
+        asyncio.create_task(reliable_task(db_manager_task, "Database Manager", restart_delay=2.0)),
     ]
 
     logger.info("Background tasks started")
-    logger.info(f"UDP listening on {config.udp_host}:{config.udp_port}")
 
-    app.state.background_tasks = tasks  # Optional: store for reference
+    app.state.background_tasks = tasks
     
     try:
         yield
@@ -49,16 +47,15 @@ async def lifespan(app: FastAPI):
         await asyncio.gather(*tasks, return_exceptions=True)
         logger.info("All tasks stopped.")
 
-
 def create_app() -> FastAPI:
-    """Create the FastAPI application"""
-
+    """Create the FastAPI application
+    """
     app = create_web_app(lifespan=lifespan)
     return app
 
-
 async def main():
-    """Entry point"""
+    """Entry point
+    """
     app = create_app()
     
     config_uv = uvicorn.Config(
@@ -78,7 +75,6 @@ async def main():
         logger.info("Keyboard interrupt received...")
     finally:
         logger.info("Server stopped.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())

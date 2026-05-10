@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
 from .config import config
 
 # SQLAlchemy imports
@@ -16,9 +16,10 @@ from .models import (
     Node,
     Position,
     TextMessage,
-    Telemetry
+    Telemetry,
+    AppEvent
 )
-from .queues import decoded_packet_queue
+from .queues import decoded_packet_queue, broadcast_queue
 
 logger = logging.getLogger(__name__)
 
@@ -114,20 +115,32 @@ AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
 async def init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
-    logger.info(f"✅ Database initialized → {DB_PATH}")
+    logger.info(f"Database initialized → {DB_PATH}")
 
 
 # ========================== CONVERSION HELPERS ==========================
 
 def decoded_to_position(decoded: DecodedMeshPacket) -> Position:
     p = decoded.packet
+    gps_str = p.get('gps_time')
+
+    gps_time = None
+    if isinstance(gps_str, str):
+        try:
+            # Handle ISO strings with or without timezone
+            if gps_str.endswith('Z'):
+                gps_str = gps_str.replace('Z', '+00:00')
+            gps_time = datetime.fromisoformat(gps_str)
+        except Exception as e:
+            logger.warning(f"Failed to parse gps_time: {gps_str} - {e}")
+
     return Position(
         node_id=decoded.node_id,
         latitude=p.get('latitude'),
         longitude=p.get('longitude'),
         altitude=p.get('altitude'),
         timestamp=decoded.timestamp,
-        gps_time=p.get('gps_time'),
+        gps_time=gps_time,
         precision=p.get('precision'),
     )
 
@@ -221,6 +234,23 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
                 db_msg = DBTextMessage(**message.__dict__)
                 session.add(db_msg)
 
+                # Commit all changes (node + message)
+                await session.commit()
+
+                # Broadcast only if we reach here (no exception)
+                try:
+                    await broadcast_queue.put(AppEvent(
+                        event_type="new_message",
+                        payload={
+                            "timestamp": message.timestamp.strftime("%H:%M:%S"),
+                            "from_node": f"0x{message.from_node:08x}",
+                            "text": message.text[:200],
+                            "channel": message.channel,
+                        }
+                    ))
+                except Exception as e:
+                    logger.warning(f"Broadcast failed: {e}")
+
             elif portnum == "TELEMETRY_APP":
                 telemetry = decoded_to_telemetry(decoded)
                 session.add(DBTelemetry(**telemetry.__dict__))
@@ -239,6 +269,31 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
             await session.rollback()
             logger.error(f"Failed to save packet to database: {e}", exc_info=True)
 
+
+async def get_recent_messages(limit: int = 20) -> List[dict]:
+    """Simple query to get recent text messages for the dashboard"""
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(DBTextMessage)
+                .order_by(DBTextMessage.timestamp.desc())
+                .limit(limit)
+            )
+            messages = result.scalars().all()
+
+            return [
+                {
+                    "timestamp": msg.timestamp.strftime("%H:%M:%S"),
+                    "from_node": f"0x{msg.from_node:08x}",
+                    "text": msg.text,
+                    "channel": msg.channel,
+                }
+                for msg in messages
+            ]
+        except Exception as e:
+            logger.error(f"Failed to fetch recent messages: {e}")
+            return []
+        
 
 # ========================== MAIN TASK ==========================
 
