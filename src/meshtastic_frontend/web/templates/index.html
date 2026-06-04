@@ -81,15 +81,13 @@
                     const data = JSON.parse(event.data);
                     
                     if (data.type === "history") {
-                        emptyDiv.style.display = "none";
                         data.messages.forEach(msg => addMessage(msg));
                     } 
                     else if (data.type === "new_message") {
-                        emptyDiv.style.display = "none";
                         addMessage(data.payload);
                     }
                 } catch (err) {
-                    console.error("Parse error:", err);
+                    console.error("Error parsing message:", err);
                 }
             };
 

@@ -1,3 +1,7 @@
+"""
+File Description: This file contains the implementation of the decoder used for
+decoding and processing LoRa packets received from Meshtastic.
+"""
 import asyncio
 import logging
 import base64

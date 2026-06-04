@@ -1,3 +1,7 @@
+"""
+File Description: This file contains the implementation of the database manager used
+to store and retrieve data related to Meshtastic.
+"""
 import asyncio
 import logging
 from pathlib import Path

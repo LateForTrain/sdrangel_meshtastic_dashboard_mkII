@@ -1,3 +1,9 @@
+"""
+Module description: UDP listener for Meshtastic messages
+This module listens for UDP packets from Meshtastic and sends them to a queue for processing.
+The messages are then processed by functions connected to the queue.
+"""
+
 import asyncio
 import logging
 from .config import config
