@@ -1,0 +1,24 @@
+[test]
+state = true
+
+[udp]
+host = "0.0.0.0" # UDP bind address
+port = 9999       # UDP port for SDRangel
+
+[api]
+host = "0.0.0.0" # FastAPI host
+port = 8000       # FastAPI port
+
+[logging]
+level = "INFO"
+
+[database]
+dir  = "./data"
+name = "app.db"
+
+[debug]
+active = false
+log    = "debug.json"
+
+[mesh]
+key = "1PG7OiApB1nwvP+rz05pAQ==" # AES decryption key

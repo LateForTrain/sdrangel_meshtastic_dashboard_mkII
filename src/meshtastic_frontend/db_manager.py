@@ -1,7 +1,5 @@
-"""
-File Description: This file contains the implementation of the database manager used
-to store and retrieve data related to Meshtastic.
-"""
+"""Module Description: This module contains the implementation of the database manager used to store and retrieve data related to Meshtastic."""
+
 import asyncio
 import logging
 from pathlib import Path
@@ -23,7 +21,7 @@ from .models import (
     Telemetry,
     AppEvent
 )
-from .queues import decoded_packet_queue, broadcast_queue
+from .queues import db_queue, broadcast_queue
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +43,7 @@ class Base(DeclarativeBase):
 # ========================== DATABASE MODELS ==========================
 
 class DBNode(Base):
-    __tablename__ = "nodes"
+    __tablename__ = "node"
     node_id: Mapped[int] = mapped_column(primary_key=True)
     long_name: Mapped[Optional[str]]
     short_name: Mapped[Optional[str]]
@@ -110,21 +108,26 @@ class DBTelemetry(Base):
     snr: Mapped[Optional[float]]
     rssi: Mapped[Optional[int]]
 
-
 # Engine & Session
 async_engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
-
 
 async def init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info(f"Database initialized → {DB_PATH}")
 
-
 # ========================== CONVERSION HELPERS ==========================
 
 def decoded_to_position(decoded: DecodedMeshPacket) -> Position:
+    """
+    Convert a decoded mesh packet into a Position
+
+    Args:
+        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
+    
+    Return: Position 
+    """
     p = decoded.packet
     gps_str = p.get('gps_time')
 
@@ -148,8 +151,15 @@ def decoded_to_position(decoded: DecodedMeshPacket) -> Position:
         precision=p.get('precision'),
     )
 
-
 def decoded_to_text_message(decoded: DecodedMeshPacket) -> TextMessage:
+    """
+    Unpack the decoded mesh packet into a TextMessage
+    
+    Args:
+        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
+    
+    Return: TextMessage 
+    """
     p = decoded.packet
     from_node = decoded.node_id or 0
     to_node = int(p.get('to', '0xffffffff'), 16)
@@ -164,8 +174,16 @@ def decoded_to_text_message(decoded: DecodedMeshPacket) -> TextMessage:
         packet_id=p.get('id'),
     )
 
-
 def decoded_to_telemetry(decoded: DecodedMeshPacket) -> Telemetry:
+    """
+    Convert a decoded mesh packet into a Telemetry
+    
+    Args:
+        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
+    
+    Return:
+        Telemetry: Telemetry data from the mesh packet 
+    """
     p = decoded.packet
     return Telemetry(
         node_id=decoded.node_id,
@@ -184,9 +202,31 @@ def decoded_to_telemetry(decoded: DecodedMeshPacket) -> Telemetry:
         rssi=p.get('rssi'),
     )
 
+def decode_to_nodeinfo(decoded: DecodedMeshPacket) -> Node:
+    """
+    Convert a decoded mesh packet into a Node
+
+    Args:
+        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
+
+    Return:
+        Node: Node data from the mesh packet 
+    """
+    p = decoded.packet
+    return Node(
+        node_id=decoded.node_id,
+
+    )
+
 
 async def upsert_node(session: AsyncSession, decoded: DecodedMeshPacket):
-    """Update or insert node information"""
+    """
+    Update or insert node information
+    
+    Args:
+        session (AsyncSession): The database session
+        decoded (DecodedMeshPacket): The decoded packet to be updated
+    """
     if not decoded.node_id:
         return
 
@@ -218,7 +258,12 @@ async def upsert_node(session: AsyncSession, decoded: DecodedMeshPacket):
 # ========================== MAIN SAVE FUNCTION ==========================
 
 async def save_decoded_packet(decoded: DecodedMeshPacket):
-    """Main function to save decoded packet to database"""
+    """
+    Main function to save decoded packet to database
+    
+    Args:
+        decoded (DecodedMeshPacket): The decoded packet to be saved
+    """
     if not decoded.node_id:
         return
 
@@ -238,26 +283,13 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
                 db_msg = DBTextMessage(**message.__dict__)
                 session.add(db_msg)
 
-                # Commit all changes (node + message)
-                await session.commit()
-
-                # Broadcast only if we reach here (no exception)
-                try:
-                    await broadcast_queue.put(AppEvent(
-                        event_type="new_message",
-                        payload={
-                            "timestamp": message.timestamp.strftime("%H:%M:%S"),
-                            "from_node": f"0x{message.from_node:08x}",
-                            "text": message.text[:200],
-                            "channel": message.channel,
-                        }
-                    ))
-                except Exception as e:
-                    logger.warning(f"Broadcast failed: {e}")
-
             elif portnum == "TELEMETRY_APP":
                 telemetry = decoded_to_telemetry(decoded)
                 session.add(DBTelemetry(**telemetry.__dict__))
+            
+            elif portnum == "NODEINFO_APP":
+                nodeinfo = decoded_to_nodeinfo(decoded)
+                session.add(DBNodeInfo(**nodeinfo.__dict__))
 
             await session.commit()
 
@@ -275,7 +307,15 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
 
 
 async def get_recent_messages(limit: int = 20) -> List[dict]:
-    """Simple query to get recent text messages for the dashboard"""
+    """
+    Simple query to get recent text messages for the dashboard
+    
+    Args:
+        limit (int): Number of messages to retrieve.
+    
+    Return:
+        List[dict]: List of recent messages.
+    """
     async with AsyncSessionLocal() as session:
         try:
             result = await session.execute(
@@ -302,14 +342,17 @@ async def get_recent_messages(limit: int = 20) -> List[dict]:
 # ========================== MAIN TASK ==========================
 
 async def db_manager_task():
+    """
+    Main task for the database manager.
+    """
     logger.info("Database Manager Task started")
     await init_db()
 
     while True:
         try:
-            decoded_packet: DecodedMeshPacket = await decoded_packet_queue.get()
+            decoded_packet: DecodedMeshPacket = await db_queue.get()
             await save_decoded_packet(decoded_packet)
-            decoded_packet_queue.task_done()
+            db_queue.task_done()
 
         except asyncio.CancelledError:
             logger.info("DB Manager task cancelled")

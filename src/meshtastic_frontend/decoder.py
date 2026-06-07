@@ -1,10 +1,10 @@
-"""
-File Description: This file contains the implementation of the decoder used for
-decoding and processing LoRa packets received from Meshtastic.
+"""This module contains the implementation of the decoder used for decoding and processing LoRa packets received from Meshtastic.
 """
 import asyncio
 import logging
 import base64
+import time
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 
@@ -15,18 +15,67 @@ from cryptography.hazmat.backends import default_backend
 
 from .config import config
 from .models import RawPacketEvent, DecodedMeshPacket
-from .queues import raw_packet_queue, decoded_packet_queue
+from .queues import raw_packet_queue, db_queue, broadcast_queue
 
 logger = logging.getLogger(__name__)
+
+class MeshPacketDeduplicator:
+    """
+    Lightweight in-memory deduplicator for Meshtastic packets.
+    Uses (from_node, packet_id) as the uniqueness key.
+    """
+    
+    def __init__(self, window_seconds: int = 30, max_per_node: int = 2000):
+        self.seen = defaultdict(lambda: deque(maxlen=max_per_node))
+        self.window_seconds = window_seconds
+        self.duplicate_count = 0
+
+    def is_duplicate(self, from_node: int, packet_id: int) -> bool:
+        """
+        Return True if this (from_node, packet_id) was seen recently.
+        
+        Args: from_node (int): The node ID of the packet.
+              packet_id (int): The packet ID of the packet.
+        
+        Returns: bool: Indicating whether this packet is a duplicate or not.
+        """
+        now = time.time()
+        key = packet_id
+        
+        node_queue = self.seen[from_node]
+
+        # Lazy cleanup of old entries
+        while node_queue and node_queue[0][0] < now - self.window_seconds:
+            node_queue.popleft()
+
+        # Check for duplicate
+        for ts, existing_id in node_queue:
+            if existing_id == key:
+                self.duplicate_count += 1
+                return True
+
+        # New packet
+        node_queue.append((now, key))
+        return False
+
+# Global deduplicator instance
+deduplicator = MeshPacketDeduplicator(window_seconds=30)
 
 # Default LongFast channel key (public)
 DEFAULT_KEY = base64.b64decode(config.mesh_key)
 
 logger.info("Decoder initialized with default key")
 
-
 def parse_lora_header(data: bytes) -> Dict[str, Any]:
-    """Parse 16-byte LoRa header"""
+    """
+    Parses the LoRa packet header and returns a dictionary containing the parsed fields.
+    
+    Args: 
+        data (bytes): The raw LoRa packet data.
+
+    Returns: 
+        Dict ([str, Any]): A dictionary containing the parsed fields.
+    """
     if len(data) < 16:
         raise ValueError(f"Packet too short for header: {len(data)} bytes")
 
@@ -49,9 +98,18 @@ def parse_lora_header(data: bytes) -> Dict[str, Any]:
         'channel': f'0x{ch_hash:02x}',
     }
 
-
 def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) -> Optional[bytes]:
-    """Decrypt Meshtastic AES-CTR payload
+    """
+    Decrypts the payload of a LoRa packet.
+    
+    Args:
+        payload (bytes): The raw payload of the LoRa packet.
+        packet_id (int): The packet ID of the LoRa packet.
+        from_node (int): The node ID of the packet.
+        key (bytes): The AES key used for decryption.
+    
+    Returns: 
+        Optional [bytes]: The decrypted payload or None if decryption failed.
     """
     try:
         nonce = packet_id.to_bytes(8, 'little') + from_node.to_bytes(8, 'little')
@@ -62,9 +120,14 @@ def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) 
         logger.debug(f"Decryption failed: {e}")
         return None
 
-
 def decode_payload(plaintext: bytes) -> Dict[str, Any]:
-    """Decode protobuf payload - supports most common Meshtastic packet types
+    """
+    Decode protobuf payload - supports most common Meshtastic packet types
+    Args:
+        plaintext (bytes): Decrypted payload
+    
+    Returns:
+        Dict [str, Any]: A dictionary containing the decoded packet fields.
     """
     result: Dict[str, Any] = {}
 
@@ -100,7 +163,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
             result['short_name'] = user.short_name
             result['hw_model'] = user.hw_model
 
-        # Telemetry (Most Common)
+        # Telemetry
         elif portnum == portnums_pb2.TELEMETRY_APP:
             tele = telemetry_pb2.Telemetry()
             tele.ParseFromString(data.payload)
@@ -141,35 +204,7 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
                     'rssi': m.rssi,
                 })
 
-        # Traceroute
-        elif portnum == portnums_pb2.TRACEROUTE_APP:
-            trace = mesh_pb2.RouteDiscovery()
-            trace.ParseFromString(data.payload)
-            result['route'] = [f'0x{hop:08x}' for hop in trace.route]
-            result['snr_towards'] = list(trace.snr_towards)
-
-        # Neighbor Info
-        elif portnum == portnums_pb2.NEIGHBORINFO_APP:
-            neigh = mesh_pb2.NeighborInfo()
-            neigh.ParseFromString(data.payload)
-            result['node_id'] = neigh.node_id
-            result['neighbors'] = [
-                {
-                    'node_id': n.node_id,
-                    'snr': round(n.snr, 2),
-                    'last_rx_time': n.last_rx_time
-                } for n in neigh.neighbors
-            ]
-
-        # Routing
-        elif portnum == portnums_pb2.ROUTING_APP:
-            routing = mesh_pb2.Routing()
-            routing.ParseFromString(data.payload)
-            result['routing_type'] = routing.WhichOneof('variant')
-            if routing.HasField('error_reason'):
-                result['error_reason'] = mesh_pb2.Routing.Error.Reason.Name(routing.error_reason)
-
-        # Unknown / Raw fallback
+        # Unknown / other / Raw fallback
         else:
             result['raw_payload_hex'] = data.payload.hex()
 
@@ -179,9 +214,9 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
 
     return result
 
-
 async def decoder_task():
-    """Background task that decodes raw Meshtastic packets
+    """
+    Background task that decodes raw Meshtastic packets.
     """
     logger.info("Meshtastic Decoder Task started")
 
@@ -217,6 +252,14 @@ async def decoder_task():
                 # Decode content
                 decoded_payload = decode_payload(plaintext)
 
+                # Check for duplicates
+                if deduplicator.is_duplicate(
+                    from_node=header['from_int'],
+                    packet_id=header['id']
+                ):
+                    logger.debug(f"Duplicate packet dropped: from {header['from']} id {header['id_hex']}")
+                    continue  # Skip to finally block
+
                 # Build final decoded packet
                 packet_dict = {
                     **header,
@@ -230,15 +273,15 @@ async def decoder_task():
                     node_id=header.get('from_int'),
                     packet_type=decoded_payload.get('portnum', 'UNKNOWN')
                 )
-
-                # Put on decoded queue
-                await decoded_packet_queue.put(decoded_packet)
+                
+                await db_queue.put(decoded_packet)
+                await broadcast_queue.put(decoded_packet)
 
                 # Logging 
                 port = decoded_payload.get('portnum', 'UNKNOWN')
                 if port != 'UNKNOWN':
                     logger.info(f"Decoded {port} from {header['from']} "
-                            f"({len(data)} bytes)")
+                               f"({len(data)} bytes)")
 
             except Exception as e:
                 logger.error(f"Failed to decode packet from {raw_event.source_ip}: {e}", exc_info=True)

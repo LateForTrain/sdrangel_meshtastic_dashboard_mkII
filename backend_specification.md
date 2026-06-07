@@ -12,10 +12,12 @@
 > **Core Workflow**:
 > ```mermaid
 > flowchart LR
->     A[UDP Listener] -->|Raw Packets| B(Decoding)
->     B --> C[Database Manager]
->     C --> D[Broadcast Queue]
->     D --> E[WebSocket Clients]
+>     A[UDP Listener] -->  B[Raw Packet Queue]
+>     B --> C[Decoder]
+>     C --> D[Database Queue]
+>     D --> H[DB Manager]
+>     C --> F[Broadcast Queue]
+>     F --> G[WebSocket Client]
 > ```
 
 ---
@@ -23,8 +25,9 @@
 ## ⚙️ Key Components
 
 ### 1. Configuration System (`config.py`)
-- **Purpose**: Environment-driven configuration
-- **Key Parameters**:
+- **Purpose**: Environment-driven configuration, loads configutaion from config.toml file.
+
+- **Key Parameters in TOML file**:
   | Parameter | Type | Default | Description |
   |-----------|------|---------|-------------|
   | `UDP_HOST` | `str` | `"0.0.0.0"` | UDP bind address |
@@ -58,6 +61,63 @@ Raw Packet Structure:
 | Position| id(PK), node_id, latitude, longitude, altitude, timestamp, gps_time, precision | GPS data requires valid coordinates | 
 | TextMessage| id(PK), node_id, from_node, to_node, text, timestamp, channel, packet_id | Text length capped at 200 chars (UI) | 
 | Telemetry| id(PK), node_id, telemetry_type, timestamp | 16 fields of device/environment metrics | 
+
+#### Database structure
+The data is stored in the SQLite database, ensuring data integrity and scalability.  The data structure is optimized for efficient querying and updates, ensuring fast response times to real-time data changes.
+
+```mermaid
+erDiagram
+    node ||--|{ position : contains 
+    node {
+        integer node_id        
+        string long_name
+        string short_name
+        string hw_model
+        datetime first_seen
+        datetime last_seen
+        string channel
+    }
+    position {
+        integer id
+        integer node_id
+        float latitude
+        float longitude
+        integer altitude
+        datetime timestamp
+        datetime gps_time
+        integer precision
+    }
+    node ||--|{ message : sends 
+    message {
+      integer id
+      integer node_id
+      integer from_node
+      integer to_node    
+      string text
+      datetime timestamp
+      string channel
+      integer packet_id
+    }
+    node ||--|{ telemetry : publish 
+    telemetry{
+      integer id
+      integer node_id
+      string telemetry_type
+      datetime timestamp
+      integer battery
+      float voltage
+      float channel_util
+      float air_util_tx
+      integer uptime_seconds
+      float temperature
+      float humidity
+      float pressure
+      integer iaq
+      float snr
+      float rssi
+    }
+```
+
 
 #### 🔐 Data Validation Rules
 - Text messages:
@@ -95,26 +155,67 @@ async def reliable_task(
 | db_manager_task | Stores decoded data + broadcasts messages | decoded_packet_queue | ⭐⭐ Critical |
 | broadcaster_task | Pushes events to WebSocket clients | broadcast_queue | ⭐ Low |
 
-### 4. Web Interface (app.py)
-#### API Endpoints
-| Endpoint | Method | Description | Response Example |
-| :--- | :--- | :--- | :--- |
-| `/` | GET | Main dashboard | `{ "udp_port": 9999 }` |
-| `/status` | GET | Health check | `{ "status": "online", "udp_port": 9999 }` |
-| `/ws` | WS | Real-time message streaming | `{"type": "history", "messages": [...]}` |
+### 4. Web Interface
 
-#### WebSocket Protocol
-```python
-# Connection flow:
-1. Client connects → adds to active_connections set
-2. Immediately sends last 15 messages (via get_recent_messages)
-3. Maintains heartbeat every 30s
-4. Disconnects when client closes
-```
-#### Critical UI Requirements
-- All timestamps shown in HH:MM:SS format
-- Text messages truncated at 200 chars (UI side)
-- Missing packet ID for text messages → show [unknown]
+#### Overview
+The web interface provides a comprehensive dashboard for interacting with Meshtastic devices over a local network connection (UDP/API). It leverages FastAPI as the robust backend framework, uses Jinja2 for powerful templating, and manages real-time state updates using WebSockets.
+
+#### Architecture Details
+- **Backend Framework**: FastAPI
+- **Templating Engine**: Jinja2 (`src/meshtastic_frontend/web/templates`)
+- **Static Assets**: Served from the `/static` directory.
+- **File Structure**: Core application logic is encapsulated in `app.py` (Application factory) and `routes.py` (Route definitions).
+
+#### API Endpoints Reference
+
+**HTTP Endpoints (GET)**
+
+| Endpoint | Method | Description | Request Parameters | Response Type / Example |
+|----------|--------|-------------|--------------------|-------------------------|
+| `/` | GET | Main Dashboard: Renders the primary message viewing interface. | N/A | HTML (uses `index.html`) |
+| `/status` | GET | Health Check & Configuration Status: Returns current operational status and local network port configurations. | None | JSON: `{ "status": "online", "udp_port": 9999, "api_port": XXXX }` |
+| `/map` | GET | Renders the map view page for geospatial tracking. | N/A | HTML (uses `map.html`) |
+| `/config` | GET | Renders the device configuration management page. | N/A | HTML (uses `config.html`) |
+
+**Context Data**: All page routes pass a shared context dictionary to Jinja2, ensuring global UI consistency. This context includes: `request`, `udp_port`, `api_port`, and the `active_page` name.
+
+#### WebSocket Protocol (Real-Time Messaging)
+
+**Endpoint**: `/ws`
+
+**Method**: WS
+
+**Description**: Live Message Stream: Maintains a persistent, bidirectional connection for real-time message updates.
+
+**Flow / Behavior Details**:
+1. **Connection**: Client connects and the WebSocket object is immediately added to the global `active_connections` set.
+2. **History Load**: The server sends the last 15 messages (via `get_recent_messages`).
+3. **Keep-Alive**: The endpoint maintains an asynchronous wait loop (currently a fixed sleep interval).
+4. **Disconnection**: Upon `WebSocketDisconnect`, the handler logs the event and removes the client from `active_connections`.
+
+#### Critical UI Requirements & Functional Details
+
+**Data Flow / Dependencies**
+- **Connection Management**: Relies on the global set (`active_connections`) to efficiently track all connected WebSocket clients.
+- **Message History**: The initial state is populated by calling `get_recent_messages` (a service layer dependency) to fetch the last 15 message records.
+
+**Frontend Rendering Rules (Client-Side Logic)**  
+The client implementation must enforce these display rules when rendering incoming messages:
+
+1. **Timestamp Format**: All timestamps must be displayed in `HH:MM:SS` format.
+2. **Message Truncation**: Text content of any message must be truncated at 200 characters (enforced client-side).
+3. **Missing Metadata Handling**: If a text message arrives missing a critical packet ID, the UI display must use the placeholder `[unknown]` for that field.
+
+#### Technical Implementation Summary
+
+**Application Initialization (`app.py`)**
+- The application utilizes a factory pattern via `create_app()` to manage initialization (e.g., dependency injection and lifecycle events).
+- Templates are configured to read from the specified path: `src/meshtastic_frontend/web/templates`.
+- Static assets (CSS, JS) are mounted globally under `/static` for seamless client access.
+
+**Route Definition (`routes.py`)**
+- The function `add_routes(app, templates)` is the central point for routing all web and API logic.
+- **Concurrency Handling**: The routes utilize Python's `asyncio` module to manage asynchronous I/O operations required for both HTTP requests and continuous WebSocket streams.
 
 ### 🛠️ Implementation Notes
 #### 🔌 Queue System (queues.py)

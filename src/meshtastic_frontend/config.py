@@ -1,21 +1,46 @@
+"""Handel the application configuration"""
+
+from __future__ import annotations
 from dataclasses import dataclass
-from dotenv import load_dotenv
-import os
-
-load_dotenv()
-
-
+from pathlib import Path
+import tomllib
+ 
+ 
+def _load_toml(path: str | Path = "config.toml") -> dict:
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+ 
+ 
 @dataclass
 class Config:
-    udp_host: str = os.getenv("UDP_HOST", "0.0.0.0")
-    udp_port: int = int(os.getenv("UDP_PORT", "9999"))
-    api_host: str = os.getenv("API_HOST", "0.0.0.0")
-    api_port: int = int(os.getenv("API_PORT", "8000"))
-    log_level: str = os.getenv("LOG_LEVEL", "INFO")
-    db_dir: str = os.getenv("DB_DIR", "./data")
-    db_name: str = os.getenv("DB_NAME", "app.db")
-    debug_active: bool = os.getenv("DEBUG_ACTIVE", "False")
-    debug_log: str = os.getenv("DEBUG_LOG","debug.json")
-    mesh_key: str = os.getenv("MESH_KEY", "1PG7OiApB1nwvP+rz05pAQ==")
-
-config = Config()
+    test_state:   bool 
+    udp_host:     str  
+    udp_port:     int  
+    api_host:     str  
+    api_port:     int  
+    log_level:    str  
+    db_dir:       str  
+    db_name:      str  
+    debug_active: bool 
+    debug_log:    str  
+    mesh_key:     str  
+ 
+    @classmethod
+    def from_toml(cls, path: str | Path = "config.toml") -> Config:
+        t = _load_toml(path)
+        return cls(
+            test_state  = t["test"]["state"],
+            udp_host     = t["udp"]["host"],
+            udp_port     = t["udp"]["port"],
+            api_host     = t["api"]["host"],
+            api_port     = t["api"]["port"],
+            log_level    = t["logging"]["level"],
+            db_dir       = t["database"]["dir"],
+            db_name      = t["database"]["name"],
+            debug_active = t["debug"]["active"],
+            debug_log    = t["debug"]["log"],
+            mesh_key     = t["mesh"]["key"],
+        )
+ 
+ 
+config = Config.from_toml()

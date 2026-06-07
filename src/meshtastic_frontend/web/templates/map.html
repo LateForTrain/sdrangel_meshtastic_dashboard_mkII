@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+
+{% block title %}Map — Meshtastic Live{% endblock %}
+
+{% block head_extra %}
+<!-- Leaflet: open-source map library; works offline once tiles are cached -->
+<link  rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+{% endblock %}
+
+{% block extra_styles %}
+/* ── Map fills the remaining content area ─────────────────────────────────── */
+#map-container {
+    flex:     1;
+    position: relative;
+    min-height: 0;
+}
+
+#leaflet-map { width: 100%; height: 100%; }
+
+/*
+ * Dark-mode tile treatment.
+ * Invert → hue-rotate brings the standard OSM palette into the blue-dark
+ * colour space that matches the rest of the UI.
+ */
+.leaflet-tile-pane {
+    filter: brightness(0.75) saturate(0.6) hue-rotate(180deg) invert(1);
+}
+
+/* Style Leaflet controls to match the dark theme */
+.leaflet-control-zoom a {
+    background:   var(--bg-panel) !important;
+    color:        var(--text-primary) !important;
+    border-color: var(--border) !important;
+}
+
+.leaflet-control-attribution {
+    background: rgba(17,24,39,0.8) !important;
+    color:      var(--text-muted) !important;
+}
+
+.leaflet-control-layers {
+    background:   var(--bg-panel) !important;
+    border-color: var(--border) !important;
+    color:        var(--text-secondary) !important;
+}
+
+/* Offline warning banner */
+#map-offline-banner {
+    display:    none;
+    position:   absolute;
+    bottom:     12px;
+    left:       50%;
+    transform:  translateX(-50%);
+    z-index:    500;
+    background: #2d1a00;
+    border:     1px solid var(--yellow);
+    color:      var(--yellow);
+    border-radius: var(--radius-md);
+    padding:    6px 14px;
+    font-family: var(--font-mono);
+    font-size:  11px;
+    white-space: nowrap;
+}
+
+/* Node count pill in toolbar */
+.map-node-count {
+    font-family:   var(--font-mono);
+    font-size:     11px;
+    background:    #1e3a5f;
+    color:         var(--accent);
+    border:        1px solid var(--border-light);
+    border-radius: var(--radius-sm);
+    padding:       2px 8px;
+}
+
+/* Leaflet popup styled to match dark UI */
+.leaflet-popup-content-wrapper {
+    background:   var(--bg-panel) !important;
+    border:       1px solid var(--border) !important;
+    border-radius: var(--radius-md) !important;
+    color:        var(--text-primary) !important;
+    box-shadow:   0 4px 16px rgba(0,0,0,0.5) !important;
+}
+
+.leaflet-popup-tip { background: var(--bg-panel) !important; }
+
+.popup-node { font-family: var(--font-mono); font-size: 12px; line-height: 1.7; }
+.popup-node strong { color: var(--accent); display: block; }
+.popup-node small  { color: var(--text-muted); display: block; }
+{% endblock %}
+
+
+{% block content %}
+<div class="toolbar">
+    <h2>Node Map</h2>
+    <div style="display:flex; align-items:center; gap:10px;">
+        <span class="map-node-count" id="map-node-count">0 nodes</span>
+        <button class="btn-ghost" onclick="fitMapToNodes()">Fit All</button>
+        <button class="btn-ghost" onclick="clearMapMarkers()">Clear</button>
+    </div>
+</div>
+
+<div id="map-container">
+    <div id="leaflet-map"></div>
+    <div id="map-offline-banner">⚠ Tile server unreachable — cached tiles only</div>
+</div>
+{% endblock %}
+
+
+{% block page_scripts %}
+<script src="/static/map.js"></script>
+<script>
+/*
+ * This page's onMeshMessage hook — feeds incoming packets to map.js.
+ * app.js calls window.onMeshMessage(msg) for every new_message / history item.
+ */
+window.onMeshMessage = function(msg) {
+    if (msg.lat != null && msg.lon != null) {
+        window.mapAddOrUpdateNode(msg.from_node, {
+            lat:      msg.lat,
+            lon:      msg.lon,
+            snr:      msg.snr,
+            longName: msg.long_name || msg.from_node,
+            lastMsg:  msg.text,
+            timestamp: msg.timestamp
+        });
+    }
+};
+
+// Initialise as soon as the DOM (and Leaflet) are ready
+document.addEventListener('DOMContentLoaded', function() {
+    window.initLeafletMap('leaflet-map');
+});
+</script>
+{% endblock %}

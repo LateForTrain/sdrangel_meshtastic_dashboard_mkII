@@ -1,5 +1,5 @@
-"""
-Module description: UDP listener for Meshtastic messages
+"""UDP listener for Meshtastic messages
+
 This module listens for UDP packets from Meshtastic and sends them to a queue for processing.
 The messages are then processed by functions connected to the queue.
 """
@@ -15,14 +15,25 @@ logger = logging.getLogger(__name__)
 
 class MeshtasticUDPProtocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
-        """Called when the transport is connected to a remote
+        """
+        Called when the transport is connected to a remote
         host and port.
+        
+        Args:
+            transport (asyncio.DatagramTransport): The transport object.
         """
 
         self.transport = transport
         logger.info(f"UDP Listener started on {config.udp_host}:{config.udp_port}")
 
     def datagram_received(self, data: bytes, addr: tuple[str, int]):
+        """
+        Called when a datagram is received from the remote host and port.
+        
+        Args:
+            data (bytes): The received datagram.
+            addr (tuple[str, int]): The remote host and port.
+        """
         try:
             event = RawPacketEvent(
                 data=data,
@@ -40,7 +51,8 @@ class MeshtasticUDPProtocol(asyncio.DatagramProtocol):
 
 
 async def udp_listener_task():
-    """Main UDP listener task
+    """
+    Main UDP listener task
     """
     logger.info("Starting Meshtastic UDP Listener Task...")
 

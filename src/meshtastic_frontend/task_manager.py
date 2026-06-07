@@ -1,3 +1,5 @@
+"""This module monitors tasks and automatically restarting them if they crashes due to any exceptions (excluding being cancelled explicitly). 
+"""
 import asyncio
 import logging
 from typing import Awaitable, Callable
@@ -10,7 +12,15 @@ async def reliable_task(
     restart_delay: float = 1.0,
     max_restarts: int = 10
 ):
-    """Wrapper that auto-restarts crashed tasks"""
+    """
+    Wrapper that auto-restarts crashed tasks
+    
+    Args:
+        coro_func (Callable[[], Awaitable[]]): The coroutine function to be executed.
+        task_name (str): The name of the task.
+        restart_delay (float, optional): The delay in seconds between restarts. Defaults to 1.0 seconds.
+        max_restarts (int, optional): The maximum number of restarts. Defaults to 10.
+    """
     restarts = 0
     while restarts < max_restarts:
         try:

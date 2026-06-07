@@ -1,3 +1,5 @@
+"""This module contains the implementation of the broadcaster"""
+
 import asyncio
 import logging
 import json
@@ -5,6 +7,19 @@ from .queues import broadcast_queue, active_connections
 from .models import AppEvent
 
 logger = logging.getLogger(__name__)
+
+                # try:
+                #     await broadcast_queue.put(AppEvent(
+                #         event_type="new_message",
+                #         payload={
+                #             "timestamp": message.timestamp.strftime("%H:%M:%S"),
+                #             "from_node": f"0x{message.from_node:08x}",
+                #             "text": message.text[:200],
+                #             "channel": message.channel,
+                #         }
+                #     ))
+                # except Exception as e:
+                #     logger.warning(f"Broadcast failed: {e}")
 
 
 async def broadcaster_task():

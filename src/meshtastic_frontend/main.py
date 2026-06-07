@@ -1,6 +1,4 @@
-"""
-File description: This file contains the main entry point for the Meshtatic SDRangel Frontend.
-"""
+"""This module orchestrate the SDRangel Meshtastic Web Frontend"""
 import asyncio
 import logging
 import uvicorn
@@ -16,12 +14,17 @@ from .udp_listener import udp_listener_task
 from .decoder import decoder_task
 from .db_manager import db_manager_task
 from .broadcaster import broadcaster_task
+from .test_module import enqueue_test_messages
 
 logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Lifespan handler for the FastAPI application
+    """
+    Lifespan handler for the FastAPI application
+
+    Args:
+        app (FastAPI): The FastAPI application.
     """
     logging.basicConfig(
         level=getattr(logging, config.log_level),
@@ -36,6 +39,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder", restart_delay=2.0)),
         asyncio.create_task(reliable_task(db_manager_task, "Database Manager", restart_delay=2.0)),
         asyncio.create_task(reliable_task(broadcaster_task, "Broadcaster", restart_delay=2.0)),
+        asyncio.create_task(reliable_task(enqueue_test_messages, "Test Module", restart_delay=2.0)),
     ]
 
     logger.info("Background tasks started")
@@ -53,13 +57,18 @@ async def lifespan(app: FastAPI):
         logger.info("All tasks stopped.")
 
 def create_app() -> FastAPI:
-    """Create the FastAPI application
+    """
+    Create the FastAPI application
+    
+    Return:
+        FastAPI: The FastAPI application
     """
     app = create_web_app(lifespan=lifespan)
     return app
 
 async def main():
-    """Entry point
+    """
+    Main Entry Point
     """
     app = create_app()
     
