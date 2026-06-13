@@ -1,9 +1,10 @@
 # File: test_module.py
 """
-File Description: This file contains the implementation of a test module that places test messages on the broadcast queue when config.test_state is true.
+This module contains the implementation of a test module that places test messages on the broadcast queue when config.test_state is true.
 """
 
 import asyncio
+
 from .config import config
 from .queues import broadcast_queue
 from .models import AppEvent

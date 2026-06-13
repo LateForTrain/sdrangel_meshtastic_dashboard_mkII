@@ -4,48 +4,45 @@ import asyncio
 import logging
 import json
 from .queues import broadcast_queue, active_connections
-from .models import AppEvent
+from .models import DecodedMeshPacket
 
 logger = logging.getLogger(__name__)
-
-                # try:
-                #     await broadcast_queue.put(AppEvent(
-                #         event_type="new_message",
-                #         payload={
-                #             "timestamp": message.timestamp.strftime("%H:%M:%S"),
-                #             "from_node": f"0x{message.from_node:08x}",
-                #             "text": message.text[:200],
-                #             "channel": message.channel,
-                #         }
-                #     ))
-                # except Exception as e:
-                #     logger.warning(f"Broadcast failed: {e}")
-
 
 async def broadcaster_task():
     """Dedicated broadcaster for WebSocket clients"""
     logger.info("WebSocket Broadcaster Task started")
 
+    type_map = {
+                "TEXT_MESSAGE_APP": "new_message",
+                "POSITION_APP":     "position_update",
+                "TELEMETRY_APP":    "telemetry_update",
+            }
+    
     while True:
         try:
-            event: AppEvent = await broadcast_queue.get()
+            packet: DecodedMeshPacket = await broadcast_queue.get()
 
             if not active_connections:
                 broadcast_queue.task_done()
                 continue
 
+            port = packet.packet_type
+            if port not in ("TEXT_MESSAGE_APP", "POSITION_APP", "TELEMETRY_APP"):
+                broadcast_queue.task_done()
+                continue
+
+            message = json.dumps({
+                "type":    type_map[port],
+                "payload": packet.packet,  # already a flat dict with all fields
+            })
+
             dead = []
             for websocket in list(active_connections):
                 try:
-                    if event.event_type == "new_message":
-                        await websocket.send_text(json.dumps({
-                            "type": "new_message",
-                            "payload": event.payload
-                        }))
+                    await websocket.send_text(message)
                 except Exception:
                     dead.append(websocket)
 
-            # Remove dead connections
             for d in dead:
                 active_connections.discard(d)
 

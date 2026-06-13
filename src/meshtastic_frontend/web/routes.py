@@ -29,7 +29,7 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
     async def page_messages(request: Request):
         return templates.TemplateResponse(
             request,
-            name="index.html",
+            name="message.html",
             context=_base_ctx(request, "messages"),
         )
 

@@ -53,6 +53,24 @@ const MAX_RECONNECTS   = 10;
 function connectWebSocket() {
     _ws = new WebSocket(`ws://${window.location.host}/ws`);
 
+    // Initialize uptime counter
+    window.meshStats = window.meshStats || {};
+    window.meshStats.uptime = window.meshStats.uptime || "00:00";
+
+    // Update uptime every second
+    setInterval(() => {
+        const [hours, minutes] = window.meshStats.uptime.split(":").map(Number);
+        let totalSeconds = hours * 3600 + minutes * 60;
+        totalSeconds++;
+
+        const newHours = Math.floor(totalSeconds / 3600);
+        const newMinutes = Math.floor((totalSeconds % 3600) / 60);
+        const newUptime = `${String(newHours).padStart(2, "0")}:${String(newMinutes).padStart(2, "0")}`;
+
+        window.meshStats.uptime = newUptime;
+        document.getElementById("stat-uptime").textContent = newUptime;
+    }, 1000);
+
     _ws.onopen = () => {
         console.log('✅ WebSocket connected');
         _reconnectAttempts       = 0;

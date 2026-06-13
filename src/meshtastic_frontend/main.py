@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder", restart_delay=2.0)),
         asyncio.create_task(reliable_task(db_manager_task, "Database Manager", restart_delay=2.0)),
         asyncio.create_task(reliable_task(broadcaster_task, "Broadcaster", restart_delay=2.0)),
-        asyncio.create_task(reliable_task(enqueue_test_messages, "Test Module", restart_delay=2.0)),
+        #asyncio.create_task(reliable_task(enqueue_test_messages, "Test Module", restart_delay=2.0)),
     ]
 
     logger.info("Background tasks started")

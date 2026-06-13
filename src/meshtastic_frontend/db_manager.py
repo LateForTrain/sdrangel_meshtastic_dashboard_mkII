@@ -1,11 +1,10 @@
 """Module Description: This module contains the implementation of the database manager used to store and retrieve data related to Meshtastic."""
-
+#  General inports
 import asyncio
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Optional, List
-from .config import config
 
 # SQLAlchemy imports
 from sqlalchemy import select, Index
@@ -13,15 +12,16 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from .models import (
-    DecodedMeshPacket,
-    Node,
-    Position,
-    TextMessage,
-    Telemetry,
-    AppEvent
+# App imports
+from .config import config
+from .utility import (
+    decoded_to_position, 
+    decoded_to_text_message,
+    decoded_to_telemetry
 )
-from .queues import db_queue, broadcast_queue
+
+from .models import DecodedMeshPacket, Position
+from .queues import db_queue
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,6 @@ DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH.absolute()}"
 class Base(DeclarativeBase):
     pass
 
-
 # ========================== DATABASE MODELS ==========================
 
 class DBNode(Base):
@@ -52,18 +51,16 @@ class DBNode(Base):
     last_seen: Mapped[datetime]
     channel: Mapped[Optional[str]]
 
-
 class DBPosition(Base):
     __tablename__ = "positions"
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    node_id: Mapped[int]
+    #id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    node_id: Mapped[int] = mapped_column(primary_key=True)
     latitude: Mapped[float]
     longitude: Mapped[float]
     altitude: Mapped[Optional[int]]
     timestamp: Mapped[datetime]
-    gps_time: Mapped[Optional[datetime]]
     precision: Mapped[Optional[int]]
-
+    gps_time: Mapped[Optional[datetime]]
 
 class DBTextMessage(Base):
     __tablename__ = "text_messages"
@@ -85,7 +82,6 @@ class DBTextMessage(Base):
         Index('idx_messages_timestamp', 'timestamp'),
         Index('idx_unique_packet', 'from_node', 'packet_id', unique=True),
     )
-
 
 class DBTelemetry(Base):
     __tablename__ = "telemetry"
@@ -116,108 +112,6 @@ async def init_db():
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info(f"Database initialized → {DB_PATH}")
-
-# ========================== CONVERSION HELPERS ==========================
-
-def decoded_to_position(decoded: DecodedMeshPacket) -> Position:
-    """
-    Convert a decoded mesh packet into a Position
-
-    Args:
-        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
-    
-    Return: Position 
-    """
-    p = decoded.packet
-    gps_str = p.get('gps_time')
-
-    gps_time = None
-    if isinstance(gps_str, str):
-        try:
-            # Handle ISO strings with or without timezone
-            if gps_str.endswith('Z'):
-                gps_str = gps_str.replace('Z', '+00:00')
-            gps_time = datetime.fromisoformat(gps_str)
-        except Exception as e:
-            logger.warning(f"Failed to parse gps_time: {gps_str} - {e}")
-
-    return Position(
-        node_id=decoded.node_id,
-        latitude=p.get('latitude'),
-        longitude=p.get('longitude'),
-        altitude=p.get('altitude'),
-        timestamp=decoded.timestamp,
-        gps_time=gps_time,
-        precision=p.get('precision'),
-    )
-
-def decoded_to_text_message(decoded: DecodedMeshPacket) -> TextMessage:
-    """
-    Unpack the decoded mesh packet into a TextMessage
-    
-    Args:
-        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
-    
-    Return: TextMessage 
-    """
-    p = decoded.packet
-    from_node = decoded.node_id or 0
-    to_node = int(p.get('to', '0xffffffff'), 16)
-
-    return TextMessage(
-        node_id=from_node,
-        from_node=from_node,
-        to_node=to_node,
-        text=p.get('text', ''),
-        timestamp=decoded.timestamp,
-        channel=p.get('channel'),
-        packet_id=p.get('id'),
-    )
-
-def decoded_to_telemetry(decoded: DecodedMeshPacket) -> Telemetry:
-    """
-    Convert a decoded mesh packet into a Telemetry
-    
-    Args:
-        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
-    
-    Return:
-        Telemetry: Telemetry data from the mesh packet 
-    """
-    p = decoded.packet
-    return Telemetry(
-        node_id=decoded.node_id,
-        telemetry_type="DEVICE",
-        timestamp=decoded.timestamp,
-        battery=p.get('battery'),
-        voltage=p.get('voltage'),
-        channel_util=p.get('channel_util'),
-        air_util_tx=p.get('air_util_tx'),
-        uptime_seconds=p.get('uptime_seconds'),
-        temperature=p.get('temperature'),
-        humidity=p.get('humidity'),
-        pressure=p.get('pressure'),
-        iaq=p.get('iaq'),
-        snr=p.get('snr'),
-        rssi=p.get('rssi'),
-    )
-
-def decode_to_nodeinfo(decoded: DecodedMeshPacket) -> Node:
-    """
-    Convert a decoded mesh packet into a Node
-
-    Args:
-        decoded (DecodedMeshPacket): The decoded mesh packet to be converted
-
-    Return:
-        Node: Node data from the mesh packet 
-    """
-    p = decoded.packet
-    return Node(
-        node_id=decoded.node_id,
-
-    )
-
 
 async def upsert_node(session: AsyncSession, decoded: DecodedMeshPacket):
     """
@@ -254,6 +148,35 @@ async def upsert_node(session: AsyncSession, decoded: DecodedMeshPacket):
         )
         session.add(new_node)
 
+async def upsert_position(session: AsyncSession, position: Position):
+    """
+    Update or insert position information
+    
+    Args:
+        session (AsyncSession): The database session
+        position (Position): The position data to be updated
+    """
+    result = await session.execute(select(DBPosition).where(DBPosition.node_id == position.node_id))
+    existing = result.scalar_one_or_none()
+    
+    if existing:
+        existing.latitude = position.latitude
+        existing.longitude = position.longitude
+        existing.altitude = position.altitude
+        existing.timestamp = position.timestamp
+        existing.precision = position.precision
+        existing.gps_time = position.gps_time
+    else:
+        new_position = DBPosition(
+            node_id=position.node_id,
+            latitude=position.latitude,
+            longitude=position.longitude,
+            altitude=position.altitude,
+            timestamp=position.timestamp,
+            precision=position.precision,
+            gps_time=position.gps_time
+        )
+        session.add(new_position)
 
 # ========================== MAIN SAVE FUNCTION ==========================
 
@@ -276,7 +199,7 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
 
             if portnum == "POSITION_APP":
                 position = decoded_to_position(decoded)
-                session.add(DBPosition(**position.__dict__))
+                await upsert_position(session, position)
 
             elif portnum == "TEXT_MESSAGE_APP":
                 message = decoded_to_text_message(decoded)
@@ -286,10 +209,6 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
             elif portnum == "TELEMETRY_APP":
                 telemetry = decoded_to_telemetry(decoded)
                 session.add(DBTelemetry(**telemetry.__dict__))
-            
-            elif portnum == "NODEINFO_APP":
-                nodeinfo = decoded_to_nodeinfo(decoded)
-                session.add(DBNodeInfo(**nodeinfo.__dict__))
 
             await session.commit()
 
@@ -304,7 +223,6 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
         except Exception as e:
             await session.rollback()
             logger.error(f"Failed to save packet to database: {e}", exc_info=True)
-
 
 async def get_recent_messages(limit: int = 20) -> List[dict]:
     """
@@ -337,8 +255,7 @@ async def get_recent_messages(limit: int = 20) -> List[dict]:
         except Exception as e:
             logger.error(f"Failed to fetch recent messages: {e}")
             return []
-        
-
+   
 # ========================== MAIN TASK ==========================
 
 async def db_manager_task():

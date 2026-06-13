@@ -2,7 +2,7 @@
 state = true
 
 [udp]
-host = "0.0.0.0" # UDP bind address
+host = "127.0.0.1" # UDP bind address
 port = 9999       # UDP port for SDRangel
 
 [api]

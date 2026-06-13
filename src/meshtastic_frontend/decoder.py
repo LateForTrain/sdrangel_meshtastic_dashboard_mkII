@@ -19,6 +19,48 @@ from .queues import raw_packet_queue, db_queue, broadcast_queue
 
 logger = logging.getLogger(__name__)
 
+# All possible output fields, grouped by packet type for readability
+_RESULT_DEFAULTS: Dict[str, Any] = {
+    # Always present
+    "portnum":          None,
+    "portnum_id":       None,
+    "decode_error":     None,
+    "raw_payload_hex":  None,
+
+    # TEXT_MESSAGE_APP
+    "text":             None,
+
+    # POSITION_APP
+    "latitude":         None,
+    "longitude":        None,
+    "altitude":         None,
+    "precision":        None,
+    "gps_time":         None,
+
+    # NODEINFO_APP
+    "node_id":          None,
+    "long_name":        None,
+    "short_name":       None,
+    "hw_model":         None,
+
+    # TELEMETRY_APP — device_metrics
+    "battery":          None,
+    "voltage":          None,
+    "channel_util":     None,
+    "air_util_tx":      None,
+    "uptime_seconds":   None,
+
+    # TELEMETRY_APP — environment_metrics
+    "temperature":      None,
+    "humidity":         None,
+    "pressure":         None,
+    "iaq":              None,
+
+    # TELEMETRY_APP — signal_metrics
+    "snr":              None,
+    "rssi":             None,
+}
+
 class MeshPacketDeduplicator:
     """
     Lightweight in-memory deduplicator for Meshtastic packets.
@@ -122,95 +164,85 @@ def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) 
 
 def decode_payload(plaintext: bytes) -> Dict[str, Any]:
     """
-    Decode protobuf payload - supports most common Meshtastic packet types
+    Decode protobuf payload - supports most common Meshtastic packet types.
+
+    All possible fields are always present in the returned dict.
+    Fields that do not apply to the received packet type are set to None.
+
     Args:
-        plaintext (bytes): Decrypted payload
-    
+        plaintext: Decrypted payload bytes.
+
     Returns:
-        Dict [str, Any]: A dictionary containing the decoded packet fields.
+        Dict with all possible packet fields; irrelevant fields are None.
     """
-    result: Dict[str, Any] = {}
+    result: Dict[str, Any] = dict(_RESULT_DEFAULTS)  # start from a clean copy
 
     try:
         data = mesh_pb2.Data()
         data.ParseFromString(plaintext)
 
         portnum = data.portnum
-        result['portnum'] = portnums_pb2.PortNum.Name(portnum)
-        result['portnum_id'] = portnum
+        result["portnum"]    = portnums_pb2.PortNum.Name(portnum)
+        result["portnum_id"] = portnum
 
-        # Text Message
+        # ── Text Message ──────────────────────────────────────────────────────
         if portnum == portnums_pb2.TEXT_MESSAGE_APP:
-            result['text'] = data.payload.decode('utf-8', errors='replace')
+            result["text"] = data.payload.decode("utf-8", errors="replace")
 
-        # Position
+        # ── Position ──────────────────────────────────────────────────────────
         elif portnum == portnums_pb2.POSITION_APP:
             pos = mesh_pb2.Position()
             pos.ParseFromString(data.payload)
-            result['latitude'] = pos.latitude_i / 1e7
-            result['longitude'] = pos.longitude_i / 1e7
-            result['altitude'] = pos.altitude
-            result['precision'] = pos.precision_bits
+            result["latitude"]  = pos.latitude_i / 1e7
+            result["longitude"] = pos.longitude_i / 1e7
+            result["altitude"]  = pos.altitude
+            result["precision"] = pos.precision_bits
             if pos.time:
-                result['gps_time'] = datetime.fromtimestamp(pos.time, tz=timezone.utc).isoformat()
+                result["gps_time"] = datetime.fromtimestamp(
+                    pos.time, tz=timezone.utc
+                ).isoformat()
 
-        # Node Info
+        # ── Node Info ─────────────────────────────────────────────────────────
         elif portnum == portnums_pb2.NODEINFO_APP:
             user = mesh_pb2.User()
             user.ParseFromString(data.payload)
-            result['node_id'] = user.id
-            result['long_name'] = user.long_name
-            result['short_name'] = user.short_name
-            result['hw_model'] = user.hw_model
+            result["node_id"]    = user.id
+            result["long_name"]  = user.long_name
+            result["short_name"] = user.short_name
+            result["hw_model"]   = user.hw_model
 
-        # Telemetry
+        # ── Telemetry ─────────────────────────────────────────────────────────
         elif portnum == portnums_pb2.TELEMETRY_APP:
             tele = telemetry_pb2.Telemetry()
             tele.ParseFromString(data.payload)
 
-            if tele.HasField('device_metrics'):
+            if tele.HasField("device_metrics"):
                 m = tele.device_metrics
-                result.update({
-                    'battery': m.battery_level,
-                    'voltage': round(m.voltage, 3),
-                    'channel_util': round(m.channel_utilization, 2),
-                    'air_util_tx': round(m.air_util_tx, 2),
-                    'uptime_seconds': m.uptime_seconds,
-                })
+                result["battery"]       = m.battery_level
+                result["voltage"]       = round(m.voltage, 3)
+                result["channel_util"]  = round(m.channel_utilization, 2)
+                result["air_util_tx"]   = round(m.air_util_tx, 2)
+                result["uptime_seconds"]= m.uptime_seconds
 
-            elif tele.HasField('environment_metrics'):
+            elif tele.HasField("environment_metrics"):
                 m = tele.environment_metrics
-                result.update({
-                    'temperature': round(m.temperature, 2),
-                    'humidity': round(m.relative_humidity, 2),
-                    'pressure': round(m.barometric_pressure, 2),
-                    'gas_resistance': getattr(m, 'gas_resistance', None),
-                    'iaq': getattr(m, 'iaq', None),
-                })
+                result["temperature"]   = round(m.temperature, 2)
+                result["humidity"]      = round(m.relative_humidity, 2)
+                result["pressure"]      = round(m.barometric_pressure, 2)
+                result["iaq"]           = getattr(m, "iaq", None)
 
-            elif tele.HasField('power_metrics'):
-                m = tele.power_metrics
-                result.update({
-                    'ch1_voltage': round(m.ch1_voltage, 3),
-                    'ch1_current': round(m.ch1_current, 3),
-                    'ch2_voltage': round(m.ch2_voltage, 3),
-                    'ch2_current': round(m.ch2_current, 3),
-                })
-
-            elif tele.HasField('signal_metrics'):
+            elif tele.HasField("signal_metrics"):
                 m = tele.signal_metrics
-                result.update({
-                    'snr': round(m.snr, 2),
-                    'rssi': m.rssi,
-                })
+                result["snr"]  = round(m.snr, 2)
+                result["rssi"] = m.rssi
 
-        # Unknown / other / Raw fallback
+        # ── Unknown / fallback ────────────────────────────────────────────────
         else:
-            result['raw_payload_hex'] = data.payload.hex()
+            result["raw_payload_hex"] = data.payload.hex()
 
     except Exception as e:
-        result['decode_error'] = str(e)
-        result['raw_payload_hex'] = plaintext.hex()
+        result["decode_error"]    = str(e)
+        result["raw_payload_hex"] = plaintext.hex()
 
     return result
 
@@ -238,19 +270,20 @@ async def decoder_task():
                 encrypted_payload = data[16:]
 
                 # Try decryption
-                plaintext = decrypt_payload(
+                decrypt_body = decrypt_payload(
                     encrypted_payload,
                     header['id'],
                     header['from_int'],
                     key
                 )
 
-                was_encrypted = plaintext is not None
+                #was_encrypted here means was encrypted with key other than public key
+                was_encrypted = decrypt_body is not None
                 if not was_encrypted:
-                    plaintext = encrypted_payload
+                    decrypt_body = encrypted_payload
 
                 # Decode content
-                decoded_payload = decode_payload(plaintext)
+                decoded_payload = decode_payload(decrypt_body)
 
                 # Check for duplicates
                 if deduplicator.is_duplicate(

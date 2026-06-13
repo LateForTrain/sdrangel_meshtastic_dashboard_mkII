@@ -1,5 +1,5 @@
 """
-This file contains data classes used to represent various events and domain models in a networked device management system.
+This module contains data classes used to represent various events and domain models in a networked device management system.
 These data classes are designed to organize and structure the data for efficient use throughout the application.
 """
 from dataclasses import dataclass, field
@@ -15,6 +15,7 @@ def utcnow() -> datetime:
 
 @dataclass
 class RawPacketEvent:
+    """Raw data obtained from the Meshtastic Receiver"""
     data: bytes
     timestamp: datetime = field(default_factory=utcnow)
     source_ip: Optional[str] = None
@@ -32,9 +33,9 @@ class DecodedMeshPacket:
 
 
 # Domain Models (for Database + Dashboard)
-
 @dataclass
 class Node:
+    """Definition of information related to a Node"""
     node_id: int
     long_name: Optional[str] = None
     short_name: Optional[str] = None
@@ -43,20 +44,21 @@ class Node:
     first_seen: datetime = field(default_factory=utcnow)
     channel: Optional[str] = None
 
-
 @dataclass
 class Position:
+    """Define of information related to a Node Position"""
     node_id: int
     latitude: float
     longitude: float
     altitude: Optional[int] = None
     timestamp: datetime = field(default_factory=utcnow)
-    gps_time: Optional[datetime] = None
     precision: Optional[int] = None
+    gps_time: Optional[datetime] = None
 
 
 @dataclass
 class TextMessage:
+    """Definition of information related to a Message rereived"""
     node_id: int                    # Sender (main field for queries)
     from_node: int
     to_node: int
@@ -68,6 +70,7 @@ class TextMessage:
 
 @dataclass
 class Telemetry:
+    """Definition of information related to Telemetry of a Node"""
     node_id: int
     telemetry_type: str = "DEVICE"
     timestamp: datetime = field(default_factory=utcnow)
