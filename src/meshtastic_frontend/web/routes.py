@@ -58,19 +58,12 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
             "api_port": config.api_port,
         }
 
-    # WebSocket
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await websocket.accept()
         active_connections.add(websocket)
 
         try:
-            recent = await get_recent_messages(limit=15)
-            await websocket.send_text(json.dumps({
-                "type":     "history",
-                "messages": recent,
-            }))
-
             while True:
                 await asyncio.sleep(30)
 

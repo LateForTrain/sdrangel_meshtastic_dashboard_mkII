@@ -16,6 +16,7 @@ async def broadcaster_task():
                 "TEXT_MESSAGE_APP": "new_message",
                 "POSITION_APP":     "position_update",
                 "TELEMETRY_APP":    "telemetry_update",
+                "NODEINFO_APP":     "node_update",
             }
     
     while True:

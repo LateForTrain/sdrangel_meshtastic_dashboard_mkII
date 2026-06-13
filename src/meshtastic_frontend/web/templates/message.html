@@ -109,23 +109,20 @@ const MAX_MESSAGES = 50;
 
 /* ── Register message handler with the shared WS client in app.js ─────────── */
 window.onMeshMessage = function(msg) {
-    emptyState.style.display = 'none';
-
-    const card = document.createElement('div');
-    card.className = 'message';
-    card.innerHTML = `
-        <div class="message-header">
-            <span class="node-badge">${escapeHtml(msg.from_node)}</span>
-            <span class="timestamp">${escapeHtml(msg.timestamp)}</span>
-        </div>
-        <div class="message-text">${escapeHtml(msg.text)}</div>
-    `;
-    feed.insertBefore(card, feed.firstChild);
-
-    if (feed.children.length > MAX_MESSAGES) feed.removeChild(feed.lastChild);
-
-    lastSeen.textContent = `Last: ${msg.timestamp}`;
+    renderMessage(msg);
 };
+
+document.addEventListener('DOMContentLoaded', () => {
+
+    const messages = window.meshState?.sessionMessages || [];
+
+    messages.slice(-MAX_MESSAGES).forEach(renderMessage);
+
+    if (messages.length) {
+        lastSeen.textContent =
+            `Last: ${messages[messages.length - 1].timestamp}`;
+    }
+});
 
 function clearFeed() {
     feed.innerHTML = '';
@@ -136,10 +133,36 @@ function clearFeed() {
     // Reset shared counters too
     if (window.meshState) {
         window.meshState.messageCount = 0;
-        window.meshState.nodesSeen.clear();
-        document.getElementById('stat-msgs').textContent  = '0';
-        document.getElementById('stat-nodes').textContent = '—';
+        window.meshState.nodes = {};
+        window.meshState.sessionMessages = [];
+        window.meshState.sessionPositions = {};
+
+        window.updateSidebarStats();
+        window.persistMeshState();
     }
+}
+
+function renderMessage(msg) {
+    emptyState.style.display = 'none';
+
+    const card = document.createElement('div');
+    card.className = 'message';
+
+    card.innerHTML = `
+        <div class="message-header">
+            <span class="node-badge">${escapeHtml(msg.from_node || '')}</span>
+            <span class="timestamp">${escapeHtml(msg.timestamp || '')}</span>
+        </div>
+        <div class="message-text">${escapeHtml(msg.text || '')}</div>
+    `;
+
+    feed.insertBefore(card, feed.firstChild);
+
+    if (feed.children.length > MAX_MESSAGES) {
+        feed.removeChild(feed.lastChild);
+    }
+
+    lastSeen.textContent = `Last: ${msg.timestamp}`;
 }
 </script>
 {% endblock %}
