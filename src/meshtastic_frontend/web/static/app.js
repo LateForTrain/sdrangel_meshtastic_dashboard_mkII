@@ -17,7 +17,7 @@ const SK = {
   MSG_COUNT:     'meshMsgCount',
   MESSAGES:      'meshMessages',      // [] — full message log for chat replay
   POSITIONS:     'meshPositions',     // {} — nodeId → latest position for map replay
-  NODES:         'meshNodes',         // {} — nodeId → { longName, lastSeen }
+  NODES:         'meshNodes',         // {} — nodeId → { long_name, lastSeen }
 };
 
 const MAX_STORED_MESSAGES = 50;
@@ -160,25 +160,23 @@ function connectWebSocket() {
 ════════════════════════════════════════════════════════════════════════════ */
 function _handleMessage(msg) {
   //Handle payloads that contain message information 
-    const s = window.meshState;
+  const s = window.meshState;
   const nodeId = msg.from_int;
 
-  console.info(msg)
-  console.info("nodeID",nodeId)
   // 1. Count
   s.messageCount++;
 
-  // 2. Track node + longName (update if we get a better name)
+  // 2. Track node + long_name (update if we get a better name)
   const existing = s.nodes[nodeId] || {};
   s.nodes[nodeId] = {
-    longName: msg.long_name || existing.longName || nodeId,
+    long_name: msg.long_name || existing.long_name || nodeId,
     lastSeen: Date.now(),
   };
 
   // 3. Store message for chat replay
   s.sessionMessages.push({
     from_node:  nodeId,
-    long_name:  s.nodes[nodeId].longName,
+    long_name:  s.nodes[nodeId].long_name,
     text:       msg.text,
     timestamp:  new Date().toLocaleTimeString(),
     snr:        msg.snr,
@@ -189,13 +187,14 @@ function _handleMessage(msg) {
   }
 
   // 4. Store position for map replay (only if it has coords)
-  if (msg.lat != null && msg.lon != null && !msg._replayed) {
+  if (msg.latitude != null && msg.longitude != null && !msg._replayed) {
     s.sessionPositions[nodeId] = {
-      lat:      msg.lat,
-      lon:      msg.lon,
+      latitude: msg.latitude,
+      longitude:msg.longitude,
+      altitude: msg.altitude,
       snr:      msg.snr,
       rssi:     msg.rssi,
-      longName: s.nodes[nodeId].longName,
+      long_name: s.nodes[nodeId].long_name,
       timestamp: new Date().toLocaleTimeString(),
     };
   }
@@ -210,8 +209,36 @@ function _handleMessage(msg) {
   }
 }
 
-function _handlePosition(msg){
-  //Handle payloads that contain positio information 
+function _handlePosition(msg) {
+  const s = window.meshState;
+  const nodeId = msg.from_int;
+
+  // 1. Track node + long_name (update if we get a better name)
+  const existing = s.nodes[nodeId] || {};
+  s.nodes[nodeId] = {
+    long_name: msg.long_name || existing.long_name || nodeId,
+    lastSeen: Date.now(),
+  };
+
+  // 2. Store position for map replay (only if it has coords)
+  s.sessionPositions[nodeId] = {
+    latitude:  msg.latitude,
+    longitude: msg.longitude,
+    altitude:  msg.altitude,
+    snr:       msg.snr,
+    rssi:      msg.rssi,
+    long_name:  s.nodes[nodeId]?.long_name || nodeId,
+    timestamp: new Date().toLocaleTimeString(),
+  };
+
+  // 3. Update sidebar
+  updateSidebarStats();
+
+  _persistState();
+
+  if (typeof window.onMeshMessage === 'function') {
+    window.onMeshMessage(msg);
+  }
 }
 
 function _handleTelemetry(msg){

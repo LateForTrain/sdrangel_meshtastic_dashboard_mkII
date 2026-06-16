@@ -109,11 +109,12 @@ const MAX_MESSAGES = 50;
 
 /* ── Register message handler with the shared WS client in app.js ─────────── */
 window.onMeshMessage = function(msg) {
-    renderMessage(msg);
+    if (msg.portnum == "TEXT_MESSAGE_APP") {
+        renderMessage(msg);
+    }
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-
     const messages = window.meshState?.sessionMessages || [];
 
     messages.slice(-MAX_MESSAGES).forEach(renderMessage);
@@ -146,12 +147,18 @@ function renderMessage(msg) {
     emptyState.style.display = 'none';
 
     const card = document.createElement('div');
+    timestampNow = new Intl.DateTimeFormat('en-GB', { 
+        hour: '2-digit', 
+        minute: '2-digit', 
+        second: '2-digit', 
+        hour12: false 
+        }).format(Date.now())
     card.className = 'message';
 
     card.innerHTML = `
         <div class="message-header">
-            <span class="node-badge">${escapeHtml(msg.from_node || '')}</span>
-            <span class="timestamp">${escapeHtml(msg.timestamp || '')}</span>
+            <span class="node-badge">${escapeHtml(msg.long_name || msg.from_int)}</span>
+            <span class="timestamp">${escapeHtml(msg.timestamp || timestampNow )}</span>
         </div>
         <div class="message-text">${escapeHtml(msg.text || '')}</div>
     `;

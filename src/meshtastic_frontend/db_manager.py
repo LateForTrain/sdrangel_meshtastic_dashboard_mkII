@@ -3,7 +3,7 @@
 import asyncio
 import logging
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional, List
 
 # SQLAlchemy imports
@@ -14,13 +14,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # App imports
 from .config import config
-from .utility import (
-    decoded_to_position, 
-    decoded_to_text_message,
-    decoded_to_telemetry
-)
 
-from .models import DecodedMeshPacket, Position
+from .models import DecodedMeshPacket, TextMessage, Telemetry
 from .queues import db_queue
 
 logger = logging.getLogger(__name__)
@@ -36,10 +31,9 @@ DB_PATH = DATA_DIR / DATA_NAME
 DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH.absolute()}"
 
 
+# DATABASE MODELS
 class Base(DeclarativeBase):
     pass
-
-# ========================== DATABASE MODELS ==========================
 
 class DBNode(Base):
     __tablename__ = "node"
@@ -66,11 +60,9 @@ class DBTextMessage(Base):
     __tablename__ = "text_messages"
     
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    
-    node_id: Mapped[int]           # Sender (for easy querying)
+    node_id: Mapped[int]
     from_node: Mapped[int]
     to_node: Mapped[int]
-    
     text: Mapped[str]
     timestamp: Mapped[datetime]
     channel: Mapped[Optional[str]]
@@ -89,18 +81,15 @@ class DBTelemetry(Base):
     node_id: Mapped[int]
     telemetry_type: Mapped[str]
     timestamp: Mapped[datetime]
-
     battery: Mapped[Optional[int]]
     voltage: Mapped[Optional[float]]
     channel_util: Mapped[Optional[float]]
     air_util_tx: Mapped[Optional[float]]
     uptime_seconds: Mapped[Optional[int]]
-
     temperature: Mapped[Optional[float]]
     humidity: Mapped[Optional[float]]
     pressure: Mapped[Optional[float]]
     iaq: Mapped[Optional[int]]
-
     snr: Mapped[Optional[float]]
     rssi: Mapped[Optional[int]]
 
@@ -109,6 +98,9 @@ async_engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
 
 async def init_db():
+    """
+    Init for db manager
+    """
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     logger.info(f"Database initialized → {DB_PATH}")
@@ -121,34 +113,30 @@ async def upsert_node(session: AsyncSession, decoded: DecodedMeshPacket):
         session (AsyncSession): The database session
         decoded (DecodedMeshPacket): The decoded packet to be updated
     """
-    if not decoded.node_id:
-        return
 
     p = decoded.packet
-    result = await session.execute(select(DBNode).where(DBNode.node_id == decoded.node_id))
+    result = await session.execute(select(DBNode).where(DBNode.node_id == p.get('from_int')))
     existing = result.scalar_one_or_none()
 
-    now = datetime.now(timezone.utc)
-
     if existing:
-        existing.last_seen = now
+        existing.last_seen = datetime.now()
         existing.long_name = p.get('long_name') or existing.long_name
         existing.short_name = p.get('short_name') or existing.short_name
         existing.hw_model = p.get('hw_model') or existing.hw_model
         existing.channel = p.get('channel') or existing.channel
     else:
         new_node = DBNode(
-            node_id=decoded.node_id,
+            node_id=p.get('from_int'),
             long_name=p.get('long_name'),
             short_name=p.get('short_name'),
             hw_model=p.get('hw_model'),
-            first_seen=now,
-            last_seen=now,
+            first_seen=datetime.now(),
+            last_seen=datetime.now(),
             channel=p.get('channel'),
         )
         session.add(new_node)
 
-async def upsert_position(session: AsyncSession, position: Position):
+async def upsert_position(session: AsyncSession, position: DecodedMeshPacket):
     """
     Update or insert position information
     
@@ -156,29 +144,29 @@ async def upsert_position(session: AsyncSession, position: Position):
         session (AsyncSession): The database session
         position (Position): The position data to be updated
     """
-    result = await session.execute(select(DBPosition).where(DBPosition.node_id == position.node_id))
+
+    p = position.packet
+    result = await session.execute(select(DBPosition).where(DBPosition.node_id == p.get('from_int')))
     existing = result.scalar_one_or_none()
     
     if existing:
-        existing.latitude = position.latitude
-        existing.longitude = position.longitude
-        existing.altitude = position.altitude
-        existing.timestamp = position.timestamp
-        existing.precision = position.precision
-        existing.gps_time = position.gps_time
+        existing.latitude = p.get('latitude')
+        existing.longitude = p.get('longitude')
+        existing.altitude = p.get('altitude')
+        existing.timestamp = datetime.now()
+        existing.precision = p.get('precision')
+        existing.gps_time = datetime.fromisoformat(p.get('gps_time'))
     else:
         new_position = DBPosition(
-            node_id=position.node_id,
-            latitude=position.latitude,
-            longitude=position.longitude,
-            altitude=position.altitude,
-            timestamp=position.timestamp,
-            precision=position.precision,
-            gps_time=position.gps_time
+            node_id=p.get('from_int'),
+            latitude=p.get('latitude'),
+            longitude=p.get('longitude'),
+            altitude=p.get('altitude'),
+            timestamp=datetime.now(),
+            precision=p.get('precision'),
+            gps_time=datetime.fromisoformat(p.get('gps_time')),
         )
         session.add(new_position)
-
-# ========================== MAIN SAVE FUNCTION ==========================
 
 async def save_decoded_packet(decoded: DecodedMeshPacket):
     """
@@ -198,16 +186,23 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
             portnum = p.get("portnum")
 
             if portnum == "POSITION_APP":
-                position = decoded_to_position(decoded)
-                await upsert_position(session, position)
+                await upsert_position(session, decoded)
 
             elif portnum == "TEXT_MESSAGE_APP":
-                message = decoded_to_text_message(decoded)
+                message = TextMessage(
+                    node_id=p.get('from_int'),
+                    from_node=p.get('from'),
+                    to_node=p.get('to'),
+                    text=p.get('text', ''),
+                    timestamp=datetime.now(),
+                    channel=p.get('channel'),
+                    packet_id=p.get('id'),
+                )
                 db_msg = DBTextMessage(**message.__dict__)
                 session.add(db_msg)
 
             elif portnum == "TELEMETRY_APP":
-                telemetry = decoded_to_telemetry(decoded)
+                telemetry = Telemetry()
                 session.add(DBTelemetry(**telemetry.__dict__))
 
             await session.commit()
@@ -257,7 +252,6 @@ async def get_recent_messages(limit: int = 20) -> List[dict]:
             return []
    
 # ========================== MAIN TASK ==========================
-
 async def db_manager_task():
     """
     Main task for the database manager.

@@ -1,0 +1,23 @@
+{
+  "header": {
+    "to":        "0xffffffff",
+    "from":      "0x00000001",
+    "from_int":  1,
+    "id":        3735928563,
+    "id_hex":    "0xdeadbef3",
+    "hop_limit": 3,
+    "want_ack":  false,
+    "via_mqtt":  false,
+    "hop_start": 3,
+    "channel":   "0x42"
+  },
+  "payload": {
+    "portnum":     "TELEMETRY_APP",
+    "portnum_id":  67,
+    "temperature": 22.45,
+    "humidity":    58.3,
+    "pressure":    1013.25,
+    "iaq":         42
+  },
+  "was_encrypted": false
+}

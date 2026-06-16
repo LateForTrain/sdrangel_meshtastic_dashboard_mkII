@@ -28,7 +28,7 @@ async def broadcaster_task():
                 continue
 
             port = packet.packet_type
-            if port not in ("TEXT_MESSAGE_APP", "POSITION_APP", "TELEMETRY_APP"):
+            if port not in ("TEXT_MESSAGE_APP", "POSITION_APP", "TELEMETRY_APP", "NODEINFO_APP"):
                 broadcast_queue.task_done()
                 continue
 

@@ -70,30 +70,17 @@ def decoded_to_text_message(decoded: "DecodedMeshPacket") -> TextMessage:
 
     Returns:
         TextMessage: A message with from_node, to_node addresses, payload text, and metadata.
-
-    Notes:
-        - 'to' field is hex-formatted in mesh; converted to int for cleaner API use later.
-        - If 'channel' not available (like when channel=0), returns 0 as default value which simplifies web layer logic.
-        - Packet ID included from original message if present, else None.
-
     """
     p = decoded.packet
     
-    # Convert hex-formatted node addresses to integer form suitable for API/web consumption later:
-    from_node_int = int(decoded.node_id)  # type: ignore[attr-defined]
-    try:
-        to_node_int = int(p.get('to', '0xffffffff'), 16) if p.get('to') else decoded.to_node or 0x7FFFFFFF  # type: ignore[attr-defined],type:ignore[misc,assignment]
-    except (TypeError, ValueError):
-        to_node_int = 0
-    
     return TextMessage(
-        node_id=from_node_int,
-        from_node=from_node_int,
-        to_node=to_node_int,
+        node_id=p.get('from_int'),
+        from_node=p.get('from'),
+        to_node=p.get('to'),
         text=p.get('text', ''),
-        timestamp=decoded.timestamp,
-        channel=p.get('channel'),  # type: ignore[attr-defined]
-        packet_id=p.get('id'),  # type: ignore[attr-defined]
+        timestamp=datetime.now(),
+        channel=p.get('channel'),
+        packet_id=p.get('id'),
     )
 
 def decoded_to_telemetry(decoded: "DecodedMeshPacket") -> Telemetry:
