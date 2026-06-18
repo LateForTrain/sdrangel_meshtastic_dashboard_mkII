@@ -13,29 +13,34 @@ async def broadcaster_task():
     logger.info("WebSocket Broadcaster Task started")
 
     type_map = {
-                "TEXT_MESSAGE_APP": "new_message",
-                "POSITION_APP":     "position_update",
-                "TELEMETRY_APP":    "telemetry_update",
-                "NODEINFO_APP":     "node_update",
-            }
-    
+        "TEXT_MESSAGE_APP": "new_message",
+        "POSITION_APP":     "position_update",
+        "TELEMETRY_APP":    "telemetry_update",
+        "NODEINFO_APP":     "node_update",
+    }
+
     while True:
         try:
-            packet: DecodedMeshPacket = await broadcast_queue.get()
+            item = await broadcast_queue.get()
 
             if not active_connections:
                 broadcast_queue.task_done()
                 continue
 
-            port = packet.packet_type
-            if port not in ("TEXT_MESSAGE_APP", "POSITION_APP", "TELEMETRY_APP", "NODEINFO_APP"):
-                broadcast_queue.task_done()
-                continue
+            if isinstance(item, dict):
+                # Already shaped as a WS message (e.g. sdr_status)
+                message = json.dumps(item)
+            else:
+                # DecodedMeshPacket from the mesh decoder pipeline
+                port = item.packet_type
+                if port not in type_map:
+                    broadcast_queue.task_done()
+                    continue
 
-            message = json.dumps({
-                "type":    type_map[port],
-                "payload": packet.packet,  # already a flat dict with all fields
-            })
+                message = json.dumps({
+                    "type":    type_map[port],
+                    "payload": item.packet,
+                })
 
             dead = []
             for websocket in list(active_connections):

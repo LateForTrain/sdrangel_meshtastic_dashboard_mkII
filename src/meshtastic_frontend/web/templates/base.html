@@ -128,16 +128,16 @@
 
         .status-dot {
             width: 8px; height: 8px; border-radius: 50%;
-            background: var(--green);
+            background: #ef4444;
             animation:  pulse 2.5s ease-in-out infinite;
         }
 
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
 
         .status-badge {
-            background:    #0f2a1a;
-            color:         var(--green);
-            border:        1px solid #1a4a2e;
+            background:    #ef44443a;
+            color:         #ef4444;
+            border:        1px solid #ef4444;
             border-radius: var(--radius-sm);
             padding:       2px 8px;
             font-size:     11px;
@@ -309,9 +309,9 @@
             <h1>Meshtastic Live</h1>
         </div>
         <div class="header-status">
-            <div class="status-dot" id="ws-dot"></div>
+            <div class="status-dot" id="sdr-dot"></div>
             <span>SDRangel</span>
-            <span class="status-badge">UDP {{ udp_port | default(9999) }}</span>
+            <span class="status-badge" id="sdr-port-badge">UDP {{ udp_port | default(0000) }}</span>
         </div>
     </header>
 

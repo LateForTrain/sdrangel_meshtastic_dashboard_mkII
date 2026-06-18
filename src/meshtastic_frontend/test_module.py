@@ -102,4 +102,4 @@ async def inject_test_packet():
         await db_queue.put(decoded_packet)
         await broadcast_queue.put(decoded_packet)
 
-        print(f"[test_msg] Injected {decoded_packet.packet_type} packet")
+        #print(f"[test_msg] Injected {decoded_packet.packet_type} packet")

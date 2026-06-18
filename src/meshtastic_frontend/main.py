@@ -14,6 +14,7 @@ from .udp_listener import udp_listener_task
 from .decoder import decoder_task
 from .db_manager import db_manager_task
 from .broadcaster import broadcaster_task
+from .sdr_heartbeat import sdr_status_monitor_task
 from .test_module import inject_test_packet
 
 logger = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(reliable_task(decoder_task, "Meshtastic Decoder", restart_delay=2.0)),
         asyncio.create_task(reliable_task(db_manager_task, "Database Manager", restart_delay=2.0)),
         asyncio.create_task(reliable_task(broadcaster_task, "Broadcaster", restart_delay=2.0)),
+        asyncio.create_task(reliable_task(sdr_status_monitor_task, "SDR_HeartBeat", restart_delay=2.0)),
         asyncio.create_task(reliable_task(inject_test_packet, "Test Module", restart_delay=2.0)),
     ]
 

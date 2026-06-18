@@ -108,7 +108,12 @@
     let _map     = null;
     let _markers = {};   // nodeId → L.marker
 
-    /* Custom circular marker icon */
+    /**
+     * Creates a custom Leaflet DivIcon containing an SVG with initials.
+     * 
+     * @param {string|number} label - The input string used to generate initials.
+     * @returns {L.DivIcon} A Leaflet icon object.
+     */
     function _makeIcon(label) {
         const initials = String(label || '?').slice(0, 4);
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">
@@ -124,10 +129,33 @@
         return L.divIcon({ html: svg, iconSize: [38,38], iconAnchor: [19,19], popupAnchor: [0,-21], className: '' });
     }
 
+
+    /**
+     * Constructs an HTML string for a popup window when a user interacts with a node.
+     * 
+     * @param {Object} node - The data object representing a geographical point/node.
+     * @param {number|null} node.snr - Signal-to-Noise Ratio (e.g., 20).
+     * @param {number|null} node.rssi - Received Signal Strength Indicator (e.g., -70).
+     * @param {number|null} node.altitude - Altitude above sea level in meters.
+     * @param {string} [node.long_name] - The primary display name of the node.
+     * @param {string} [node.nodeId] - Unique identifier used if long_name is missing.
+     * @param {number} node.latitude - Latitude coordinate.
+     * @param {number} node.longitude - Longitude coordinate.
+     * @param {string|Date|null} node.timestamp - The ISO string or date object of last activity.
+     * 
+     * @returns {string} A formatted HTML string for the popup component.
+     */
     function _buildPopup(node) {
+        // Format numeric values with units, defaulting to a dash '—' if value is null/undefined
         const snr  = node.snr  != null ? `${node.snr} dB`  : '—';
         const rssi = node.rssi != null ? `${node.rssi} dBm` : '—';
         const alt  = node.altitude != null ? `${node.altitude} m` : '—';
+
+        /**
+         * The template below uses a fallback chain for the title: 
+         * long_name -> nodeId -> "Unknown"
+         * Coordinates are fixed to 5 decimal places for cleaner display.
+         */
         return `<div class="popup-node">
             <strong>${escapeHtml(node.long_name || node.nodeId || 'Unknown')}</strong>
             <span>Lat: ${node.latitude.toFixed(5)}</span>
@@ -138,7 +166,9 @@
         </div>`;
     }
 
-    /* ── Public: initialise the map ─────────────────────────────────────── */
+    /**
+     *   Public: initialise the map
+     *  */
     window.initLeafletMap = function (elementId) {
         if (_map) return;
 
@@ -162,7 +192,9 @@
         });
     };
 
-    /* ── Public: add or move a marker ───────────────────────────────────── */
+    /** 
+     * Public: add or move a marker 
+     */
     window.mapAddOrUpdateNode = function (nodeId, node) {
         if (!_map) return;
         if (node.latitude == null || node.longitude == null) return;
@@ -188,7 +220,9 @@
         }
     };
 
-    /* ── Public: fit view to all markers ───────────────────────────────── */
+    /** 
+     * Public: fit view to all markers 
+    */
     window.fitMapToNodes = function () {
         if (!_map) return;
         const points = Object.values(_markers).map(m => m.getLatLng());
@@ -200,7 +234,9 @@
         }
     };
 
-    /* ── Public: remove all markers ─────────────────────────────────────── */
+    /** 
+     * Public: remove all markers
+     */
     window.clearMapMarkers = function () {
         if (!_map) return;
         Object.values(_markers).forEach(m => _map.removeLayer(m));
@@ -214,10 +250,26 @@
         }
     };
 
+    /**
+     * Updates the DOM element identifying the total number of nodes currently 
+     * displayed or stored in the system.
+     * 
+     * This function performs the following:
+     * 1. Locates the 'map-node-count' element.
+     * 2. Calculates the count based on the keys in the global/module $_markers object.
+     * 3. Updates the text content with proper pluralization (e.g., "1 node" vs "5 nodes").
+     * 
+     * @returns {void}
+     */
     function _updateNodeCount() {
+        // Target the specific UI element for the count label
         const el = document.getElementById('map-node-count');
+        
         if (el) {
+            // Calculate the number of unique keys in the markers collection
             const n = Object.keys(_markers).length;
+            
+            // Update text with a ternary check to handle pluralization correctly
             el.textContent = `${n} node${n !== 1 ? 's' : ''}`;
         }
     }
@@ -258,7 +310,9 @@ window.onMeshMessage = function (msg) {
     }
 };
 
-/* Initialise as soon as DOM (and Leaflet) are ready */
+/**
+ * Initialise as soon as DOM (and Leaflet) are ready
+ */
 document.addEventListener('DOMContentLoaded', function () {
     window.initLeafletMap('leaflet-map');
 });

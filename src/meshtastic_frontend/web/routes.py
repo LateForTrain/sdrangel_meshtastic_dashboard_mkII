@@ -1,7 +1,7 @@
 # routes.py
-
+from dataclasses import asdict
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import json
 import logging
@@ -48,6 +48,10 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
             name="config.html",
             context=_base_ctx(request, "config"),
         )
+
+    @app.get("/api/config")
+    async def api_config():
+        return JSONResponse(asdict(config))
 
     # API routes
     @app.get("/status")

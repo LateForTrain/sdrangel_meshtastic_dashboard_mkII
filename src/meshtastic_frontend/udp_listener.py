@@ -12,7 +12,6 @@ from .queues import raw_packet_queue
 
 logger = logging.getLogger(__name__)
 
-
 class MeshtasticUDPProtocol(asyncio.DatagramProtocol):
     def connection_made(self, transport):
         """
@@ -49,13 +48,12 @@ class MeshtasticUDPProtocol(asyncio.DatagramProtocol):
         except Exception as e:
             logger.error(f"Failed to handle UDP packet: {e}", exc_info=True)
 
+_current_transport: asyncio.DatagramTransport | None = None
+_current_protocol: MeshtasticUDPProtocol | None = None
 
 async def udp_listener_task():
-    """
-    Main UDP listener task
-    """
+    global _current_transport, _current_protocol
     logger.info("Starting Meshtastic UDP Listener Task...")
-
     loop = asyncio.get_running_loop()
 
     try:
@@ -63,16 +61,19 @@ async def udp_listener_task():
             MeshtasticUDPProtocol,
             local_addr=(config.udp_host, config.udp_port)
         )
-
+        _current_transport = transport
+        _current_protocol = protocol
         logger.info(f"UDP socket bound to {config.udp_host}:{config.udp_port}")
 
-        # Keep the task alive
         try:
             while True:
-                await asyncio.sleep(3600)  # Long sleep is fine
+                await asyncio.sleep(3600)
         finally:
             transport.close()
+            _current_transport = None
+            _current_protocol = None
 
     except Exception as e:
         logger.error(f"UDP Listener task crashed: {e}", exc_info=True)
         raise
+

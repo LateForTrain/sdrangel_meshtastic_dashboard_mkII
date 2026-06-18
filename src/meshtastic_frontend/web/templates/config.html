@@ -67,6 +67,12 @@
     opacity:       0.55;   /* visually signals "not yet active" */
 }
 
+/* Card starts at full opacity since it loads live data */
+#sdr-bridge-card,
+#sdr-meshtastic-card {
+    opacity: 1;
+}
+
 .config-card-title {
     font-size:      12px;
     font-weight:    600;
@@ -74,6 +80,9 @@
     letter-spacing: 0.06em;
     color:          var(--text-muted);
     margin-bottom:  12px;
+    display:        flex;
+    align-items:    center;
+    justify-content: space-between;
 }
 
 .config-row {
@@ -87,6 +96,7 @@
 
 .config-row:last-child { border-bottom: none; }
 .config-row label       { color: var(--text-secondary); }
+
 .config-row .val {
     font-family: var(--font-mono);
     font-size:   11px;
@@ -94,11 +104,17 @@
     font-style:  italic;
 }
 
-/* Highlight rows that have a real value (not "not connected") */
+/* Highlight rows that have a real value */
 .config-row .val.live {
     color:       var(--accent);
     font-style:  normal;
     font-weight: 500;
+}
+
+/* Error/not-ok state */
+.config-row .val.err {
+    color:       var(--red);
+    font-style:  italic;
 }
 {% endblock %}
 
@@ -106,109 +122,208 @@
 {% block content %}
 <div class="toolbar">
     <h2>Configuration</h2>
-    <span class="toolbar-meta">Connect a device to enable editing</span>
+    <span class="toolbar-meta"><button class="btn-ghost"
+                        onclick="loadSdrConfig()"
+                        style="padding:2px 8px; font-size:10px;">↻ Refresh</button></span>
 </div>
 
 <div class="config-scroll">
-
-    <!-- Top callout ──────────────────────────────────────────────────────── -->
-    <div class="config-placeholder">
-        <div class="config-placeholder-icon">🔧</div>
-        <h3>Configuration Panel</h3>
-        <p>
-            Node settings, radio parameters, and channel configuration will be
-            editable here once a Meshtastic device is connected. Current runtime
-            values are read from the device over the existing WebSocket connection.
-        </p>
-        <button class="btn-primary" disabled style="opacity:0.45; cursor:not-allowed;">
-            No device connected
-        </button>
-    </div>
-
-    <!-- Radio ─────────────────────────────────────────────────────────────── -->
-    <div class="config-section-title">📻 Radio</div>
+    <!-- SDR Device  -->
+    <div class="config-section-title">📻 SDRangle</div>
     <div class="config-grid">
-        <div class="config-card">
-            <div class="config-card-title">LoRa Modem</div>
-            <div class="config-row"><label>Region</label>          <span class="val">not connected</span></div>
-            <div class="config-row"><label>Modem Preset</label>    <span class="val">not connected</span></div>
-            <div class="config-row"><label>TX Power</label>        <span class="val">not connected</span></div>
-            <div class="config-row"><label>Bandwidth</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Spread Factor</label>   <span class="val">not connected</span></div>
-            <div class="config-row"><label>Coding Rate</label>     <span class="val">not connected</span></div>
-        </div>
-        <div class="config-card">
-            <div class="config-card-title">Frequency</div>
-            <div class="config-row"><label>Frequency Slot</label>  <span class="val">not connected</span></div>
-            <div class="config-row"><label>Freq Override</label>   <span class="val">not connected</span></div>
-            <div class="config-row"><label>Hop Limit</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Boost RX</label>        <span class="val">not connected</span></div>
-        </div>
-    </div>
-
-    <!-- Device ─────────────────────────────────────────────────────────────── -->
-    <div class="config-section-title">📋 Device</div>
-    <div class="config-grid">
-        <div class="config-card">
-            <div class="config-card-title">Identity</div>
-            <div class="config-row"><label>Node ID</label>         <span class="val">not connected</span></div>
-            <div class="config-row"><label>Long Name</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Short Name</label>      <span class="val">not connected</span></div>
-            <div class="config-row"><label>Hardware Model</label>  <span class="val">not connected</span></div>
-            <div class="config-row"><label>Firmware</label>        <span class="val">not connected</span></div>
-        </div>
-        <div class="config-card">
-            <div class="config-card-title">Behaviour</div>
-            <div class="config-row"><label>Role</label>            <span class="val">not connected</span></div>
-            <div class="config-row"><label>Serial Output</label>   <span class="val">not connected</span></div>
-            <div class="config-row"><label>Debug Log</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Rebroadcast</label>     <span class="val">not connected</span></div>
-        </div>
-    </div>
-
-    <!-- Channels ───────────────────────────────────────────────────────────── -->
-    <div class="config-section-title">📡 Channels</div>
-    <div class="config-grid">
-        <div class="config-card">
-            <div class="config-card-title">Primary Channel</div>
-            <div class="config-row"><label>Name</label>            <span class="val">not connected</span></div>
-            <div class="config-row"><label>PSK</label>             <span class="val">not connected</span></div>
-            <div class="config-row"><label>Uplink Enabled</label>  <span class="val">not connected</span></div>
-            <div class="config-row"><label>Downlink Enabled</label><span class="val">not connected</span></div>
-        </div>
-        <div class="config-card">
-            <div class="config-card-title">Secondary Channels</div>
-            <div class="config-row"><label>Channel 2</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Channel 3</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Channel 4</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>Channel 5</label>       <span class="val">not connected</span></div>
-        </div>
-    </div>
-
-    <!-- Network ────────────────────────────────────────────────────────────── -->
-    <div class="config-section-title">🌐 Network</div>
-    <div class="config-grid">
-        <div class="config-card">
-            <div class="config-card-title">SDRangel Bridge</div>
-            <!-- UDP port is a real live value injected by Jinja2 -->
-            <div class="config-row">
-                <label>UDP Port</label>
-                <span class="val live">{{ udp_port | default(9999) }}</span>
+        <div class="config-card" id="sdr-bridge-card">
+            <div class="config-card-title">
+                SDRangel Base
             </div>
-            <div class="config-row">
-                <label>API Port</label>
-                <span class="val live">{{ api_port | default(8888) }}</span>
-            </div>
+            <div class="config-row"><label>Version</label>          <span class="val" id="sdr-version">loading…</span></div>
+            <div class="config-row"><label>OS</label>               <span class="val" id="sdr-os">loading…</span></div>
+            <div class="config-row"><label>Architecture</label>     <span class="val" id="sdr-architecture">loading…</span></div>
+            <div class="config-row"><label>Hardware</label>         <span class="val" id="sdr-hw-type">loading…</span></div>
+            <div class="config-row"><label>Frequency</label>        <span class="val" id="sdr-frequency">loading…</span></div>
+            <div class="config-row"><label>Bandwidth</label>        <span class="val" id="sdr-bandwidth">loading…</span></div>
+            <div class="config-row"><label>Device State</label>     <span class="val" id="sdr-channel-state">loading…</span></div>
         </div>
-        <div class="config-card">
-            <div class="config-card-title">WiFi / MQTT</div>
-            <div class="config-row"><label>WiFi SSID</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>WiFi Mode</label>       <span class="val">not connected</span></div>
-            <div class="config-row"><label>MQTT Server</label>     <span class="val">not connected</span></div>
-            <div class="config-row"><label>MQTT Enabled</label>    <span class="val">not connected</span></div>
-            <div class="config-row"><label>MQTT TLS</label>        <span class="val">not connected</span></div>
+        <div class="config-card" id="sdr-meshtastic-card">
+            <div class="config-card-title">
+                SDRangel Meshtastic
+            </div>
+            <div class="config-row"><label>Sending UDP</label>      <span class="val" id="mesh-udp-sending">loading…</span></div>
+            <div class="config-row"><label>Region</label>           <span class="val" id="mesh-region">loading…</span></div>
+            <div class="config-row"><label>Preset</label>           <span class="val" id="mesh-preset">loading…</span></div>
+            <div class="config-row"><label>Channel</label>          <span class="val" id="mesh-channel">loading…</span></div>
+            <div class="config-row"><label>Spread Factor</label>    <span class="val" id="mesh-spread-factor">loading…</span></div>
+            <div class="config-row"><label>Preamble</label>         <span class="val" id="mesh-preamble">loading…</span></div>
+            <div class="config-row"><label>Decode Active</label>    <span class="val" id="mesh-decode-active">loading…</span></div>
         </div>
     </div>
-
+    <!-- /SDR Device  -->
+    <!-- Web Server -->
+    <div class="config-section-title">🌐 Web Server</div>
+    <div class="config-grid">
+        <div class="config-card">
+            <div class="config-card-title">General</div>
+            <div class="config-row"><label>API Host</label>         <span class="val">not connected</span></div>
+            <div class="config-row"><label>API Port</label>         <span class="val">not connected</span></div>
+        </div>
+        <div class="config-card">
+            <div class="config-card-title">Other</div>
+            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
+            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
+            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
+            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
+        </div>
+    </div>
+    <!-- Web Server -->
 </div><!-- /config-scroll -->
+{% endblock %}
+
+
+{% block page_scripts %}
+<script>
+const SDRANGEL_BASE    = 'http://127.0.0.1:8091/sdrangel';
+const TARGET_CHANNEL_ID = 'MeshtasticDemod';
+
+/**
+ * Fetches SDRangel state and populates the SDRangel Bridge config card.
+ * Runs on page load and on manual refresh via the ↻ button.
+ */
+async function loadSdrConfig() {
+    const card1 = document.getElementById('sdr-bridge-card');
+    const card2 = document.getElementById('sdr-meshtastic-card');
+
+    // Dim card while loading so the user knows a refresh is in progress
+    if (card1) card1.style.opacity = '0.55';
+    if (card2) card2.style.opacity = '0.55';
+
+    try {
+        // ── Step 1: fetch root endpoint ─────────────────────────────────────
+        const rootResp = await fetch(SDRANGEL_BASE);
+        if (!rootResp.ok) throw new Error(`SDRangel unreachable (HTTP ${rootResp.status})`);
+        const root = await rootResp.json();
+
+        setSdrRow('sdr-version',       root.version        ?? '—');
+        setSdrRow('sdr-os',            root.os             ?? '—');
+        setSdrRow('sdr-architecture',  root.architecture   ?? '—');
+
+        // ── Step 2: discover MeshtasticDemod channel ─────────────────────────
+        let dsIndex     = null;
+        let chIndex     = null;
+        let deviceState = null;
+
+        for (const [i, ds] of (root.devicesetlist?.deviceSets ?? []).entries()) {
+            for (const ch of (ds.channels ?? [])) {
+                if (ch.id === TARGET_CHANNEL_ID) {
+                    dsIndex     = i;
+                    chIndex     = ch.index;
+                    deviceState = ds.samplingDevice?.state ?? 'unknown';
+                    break;
+                }
+            }
+            if (dsIndex !== null) break;
+        }
+
+        if (dsIndex === null) {
+            // SDRangel is reachable but no MeshtasticDemod channel found
+            setSdrRow('sdr-hw-type',            '—');
+            setSdrRow('sdr-frequency',          '—');
+            setSdrRow('sdr-bandwidth',          '—');
+            setSdrRow('sdr-channel-state',      'no MeshtasticDemod found', false);
+            
+            setSdrRow('mesh-udp-sending',       '—');
+            setSdrRow('mesh-region',            '—');
+            setSdrRow('mesh-preset',            '—');
+            setSdrRow('mesh-channel',           '—');
+            setSdrRow('mesh-spread-factor',     '—');
+            setSdrRow('mesh-preamble',          '—');
+            setSdrRow('mesh-decode-active',     '—');
+            if (card) card.style.opacity = '1';
+            return;
+        }
+
+        // ── Step 3: fetch device set + channel settings in parallel ──────────
+        const [dsResp, chResp] = await Promise.all([
+            fetch(`${SDRANGEL_BASE}/deviceset/${dsIndex}`),
+            fetch(`${SDRANGEL_BASE}/deviceset/${dsIndex}/channel/${chIndex}/settings`),
+        ]);
+
+        const dsData = dsResp.ok ? await dsResp.json() : null;
+        const chData = chResp.ok ? await chResp.json() : null;
+
+        // ── Device set values ────────────────────────────────────────────────
+        const state     = dsData?.samplingDevice?.state           ?? deviceState;
+        const frequency = dsData?.samplingDevice?.centerFrequency ?? null;
+        const bandwidth = dsData?.samplingDevice?.bandwidth       ?? null;
+
+        // ── Channel settings values ──────────────────────────────────────────
+        const chSettings   = chData?.MeshtasticDemodSettings ?? {};
+        const spreadFactor = chSettings.spreadFactor  != null ? String(chSettings.spreadFactor) : '—';
+
+
+        // ── Populate rows ────────────────────────────────────────────────────
+        setSdrRow('sdr-hw-type',            dsData?.samplingDevice?.hwType ?? '—');
+        setSdrRow('sdr-frequency',          frequency ? `${(frequency / 1e6).toFixed(3)} MHz` : '—');
+        setSdrRow('sdr-bandwidth',          bandwidth ? `${(bandwidth / 1e3).toFixed(3)} kHz` : '—');
+        setSdrRow('sdr-channel-state', state,       state === 'running');
+
+        if (state === 'running' && chSettings.sendViaUDP === 1){
+            setSdrRow('mesh-udp-sending',       chSettings.udpAddress + ' : ' + chSettings.udpPort)
+        } else{
+            setSdrRow('mesh-udp-sending',       '—')
+        }
+        
+        setSdrRow('mesh-region',            '—');
+        setSdrRow('mesh-preset',            '—');
+        setSdrRow('mesh-channel',           '—');
+        setSdrRow('mesh-spread-factor',     chSettings.spreadFactor  != null ? String(chSettings.spreadFactor) : '—');
+        setSdrRow('mesh-preamble',          chSettings.preambleChirps  != null ? String(chSettings.preambleChirps) : '—');
+        setSdrRow('mesh-decode-active',     chSettings.decodeActive === 1 ? 'yes' : 'no');
+
+        if (card1) card1.style.opacity = '1';
+        if (card2) card2.style.opacity = '1';
+
+    } catch (err) {
+        console.error('SDRangel config fetch failed:', err);
+
+        // Mark every dynamic row as unreachable so the user gets clear feedback
+        setSdrRow('sdr-version',            '—', false);
+        setSdrRow('sdr-os',                 '—', false);
+        setSdrRow('sdr-architecture',  '—', false);
+        setSdrRow('sdr-hw-type',            '—', false);
+        setSdrRow('sdr-frequency',          '—', false);
+        setSdrRow('sdr-bandwidth',          '—', false);
+        setSdrRow('sdr-channel-state',      'unreachable', false);
+        
+        setSdrRow('mesh-udp-sending',       '—', false);
+        setSdrRow('mesh-region',            '—', false);
+        setSdrRow('mesh-preset',            '—', false);
+        setSdrRow('mesh-channel',           '—', false);
+        setSdrRow('mesh-spread-factor',     '—', false);
+        setSdrRow('mesh-preamble',          '—', false);
+        setSdrRow('mesh-decode-active',     '—', false);
+
+        if (card1) card1.style.opacity = '1';
+        if (card2) card2.style.opacity = '1';
+    }
+}
+
+/**
+ * Updates a config row value span by element id.
+ *
+ * @param {string}  id   - The element id to update.
+ * @param {string}  text - The text to display.
+ * @param {boolean} [live]
+ *   true      → accent colour  (.val.live)  — value is good / active
+ *   false     → red            (.val.err)   — value indicates a problem
+ *   undefined → neutral accent (.val.live)  — informational, no pass/fail meaning
+ */
+function setSdrRow(id, text, live) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className   = 'val' + (live === false ? ' err' : ' live');
+}
+
+// Load on page ready
+document.addEventListener('DOMContentLoaded', loadSdrConfig);
+</script>
 {% endblock %}

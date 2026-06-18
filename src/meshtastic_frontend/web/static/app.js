@@ -12,6 +12,7 @@
  * If no handler is defined, packets are silently tracked for stats only.
  */
 
+/* General Constants declared */
 const SK = {
   START_TIME:    'meshStartTime',
   MSG_COUNT:     'meshMsgCount',
@@ -22,9 +23,43 @@ const SK = {
 
 const MAX_STORED_MESSAGES = 50;
 
-/* ════════════════════════════════════════════════════════════════════════════
-   SHARED STATE  (exposed as window.meshState for page scripts that need it)
-════════════════════════════════════════════════════════════════════════════ */
+/* DOM REFS  (present in base.html on every page) */
+const _statNodes  = document.getElementById('stat-nodes');
+const _statMsgs   = document.getElementById('stat-msgs');
+const _statUptime = document.getElementById('stat-uptime');
+const _wsStatus   = document.getElementById('ws-status');
+const _sdrDot       = document.getElementById('sdr-dot');
+const _sdrPortBadge = document.getElementById('sdr-port-badge');
+
+/* WEBSOCKET */
+let _ws                = null;
+let _reconnectAttempts = 0;
+const MAX_RECONNECTS   = 10;
+
+/**
+  * @function _persistState
+  * @description Persists the current mesh state to sessionStorage to maintain state across page reloads and sessions.
+  * @private
+  * @memberof app
+  * @instance
+  * @returns {void}
+  */
+function _persistState() {
+  const s = window.meshState;
+  sessionStorage.setItem(SK.MSG_COUNT,  s.messageCount);
+  sessionStorage.setItem(SK.MESSAGES,   JSON.stringify(s.sessionMessages));
+  sessionStorage.setItem(SK.POSITIONS,  JSON.stringify(s.sessionPositions));
+  sessionStorage.setItem(SK.NODES,      JSON.stringify(s.nodes));
+}
+
+/**
+ * @function _loadState
+ * @description Loads the mesh state from sessionStorage to restore state across page reloads and sessions.
+ * @private
+ * @memberof app
+ * @instance
+ * @returns {Object} An object containing the restored mesh state including start time, message count, session messages, session positions, and nodes.
+ */
 function _loadState() {
   let startTime = Number(sessionStorage.getItem(SK.START_TIME));
   if (!Number.isFinite(startTime) || startTime <= 0) {
@@ -51,13 +86,14 @@ function _loadState() {
 
   return { startTime, messageCount, sessionMessages, sessionPositions, nodes };
 }
-window.meshState = _loadState();
 
-/* Derived — not stored, always computed */
-Object.defineProperty(window.meshState, 'nodeCount', {
-  get() { return Object.keys(this.nodes).length; }
-});
-
+/**
+ * @function updateSidebarStats
+ * @description Updates the sidebar statistics by setting the message count and node count displayed in the UI.
+ * @memberof app
+ * @instance
+ * @returns {void}
+ */
 function updateSidebarStats() {
     if (_statMsgs) {
         _statMsgs.textContent = window.meshState.messageCount;
@@ -68,27 +104,13 @@ function updateSidebarStats() {
     }
 }
 
-function _persistState() {
-  const s = window.meshState;
-  sessionStorage.setItem(SK.MSG_COUNT,  s.messageCount);
-  sessionStorage.setItem(SK.MESSAGES,   JSON.stringify(s.sessionMessages));
-  sessionStorage.setItem(SK.POSITIONS,  JSON.stringify(s.sessionPositions));
-  sessionStorage.setItem(SK.NODES,      JSON.stringify(s.nodes));
-}
-
-/* ════════════════════════════════════════════════════════════════════════════
-   DOM REFS  (present in base.html on every page)
-════════════════════════════════════════════════════════════════════════════ */
-const _statNodes  = document.getElementById('stat-nodes');
-const _statMsgs   = document.getElementById('stat-msgs');
-const _statUptime = document.getElementById('stat-uptime');
-const _wsStatus   = document.getElementById('ws-status');
-const _wsDot      = document.getElementById('ws-dot');
-
-updateSidebarStats();
-/* ════════════════════════════════════════════════════════════════════════════
-   UPTIME TICKER
-════════════════════════════════════════════════════════════════════════════ */
+/**
+ * @function updateUptime
+ * @description Updates the uptime display in the sidebar by calculating the time elapsed since the mesh started.
+ * @memberof app
+ * @instance
+ * @returns {void}
+ */
 function updateUptime() {
     const secs = Math.floor((Date.now() - window.meshState.startTime) / 1000);
     const m    = String(Math.floor(secs / 60)).padStart(2, '0');
@@ -96,16 +118,13 @@ function updateUptime() {
     if (_statUptime) _statUptime.textContent = `${m}:${s}`;
 }
 
-updateUptime();
-setInterval(updateUptime, 1000);
-
-/* ════════════════════════════════════════════════════════════════════════════
-   WEBSOCKET
-════════════════════════════════════════════════════════════════════════════ */
-let _ws                = null;
-let _reconnectAttempts = 0;
-const MAX_RECONNECTS   = 10;
-
+/**
+ * @function connectWebSocket
+ * @description Establishes a WebSocket connection to the server at /ws and handles reconnection logic.
+ * @memberof app
+ * @instance
+ * @returns {void}
+ */
 function connectWebSocket() {
     _ws = new WebSocket(`ws://${window.location.host}/ws`);
 
@@ -114,7 +133,6 @@ function connectWebSocket() {
         _reconnectAttempts       = 0;
         _wsStatus.textContent    = 'Connected';
         _wsStatus.style.color    = '#22c55e';
-        if (_wsDot) _wsDot.style.background = '#22c55e';
     };
 
     _ws.onmessage = (event) => {
@@ -129,6 +147,8 @@ function connectWebSocket() {
                 _handleTelemetry(data.payload);
             } else if (data.type === 'node_update'){
                 _handleNode(data.payload);
+            } else if (data.type === 'sdr_status') {
+                _handleSdrStatus(data.payload);
             }
         } catch (err) {
             console.error('app.js: failed to parse WS message', err);
@@ -138,7 +158,10 @@ function connectWebSocket() {
     _ws.onclose = () => {
         _wsStatus.textContent = 'Reconnecting…';
         _wsStatus.style.color = '#f59e0b';
-        if (_wsDot) _wsDot.style.background = '#f59e0b';
+        _sdrDot.style.background = '#f59e0b';
+        _sdrPortBadge.style.border = '1px solid #f59e0b';
+        _sdrPortBadge.style.color = '#f59e0b';
+        _sdrPortBadge.style.background = '#f59f0b2c';
 
         if (_reconnectAttempts < MAX_RECONNECTS) {
             _reconnectAttempts++;
@@ -146,18 +169,27 @@ function connectWebSocket() {
             const delay = Math.min(2000 * _reconnectAttempts, 10_000);
             setTimeout(connectWebSocket, delay);
         } else {
-            _wsStatus.textContent = 'Disconnected';
+            _wsStatus.textContent = 'Reconnecting…';
             _wsStatus.style.color = '#ef4444';
-            if (_wsDot) _wsDot.style.background = '#ef4444';
+            _sdrDot.style.background = '#ef4444';
+            _sdrPortBadge.style.border = '1px solid #ef4444';
+            _sdrPortBadge.style.color = '#ef4444';
+            _sdrPortBadge.style.background = '#ef44443a';
         }
     };
 
     _ws.onerror = (err) => console.error('app.js: WebSocket error', err);
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   PAYLOAD HANDLER
-════════════════════════════════════════════════════════════════════════════ */
+/**
+ * @function _handleMessage
+ * @description Processes incoming message payloads, updates the mesh state, and dispatches the message to the current page via window.onMeshMessage(msg).
+ * @private
+ * @memberof app
+ * @instance
+ * @param {Object} msg - The message payload containing message details.
+ * @returns {void}
+ */
 function _handleMessage(msg) {
   //Handle payloads that contain message information 
   const s = window.meshState;
@@ -208,7 +240,15 @@ function _handleMessage(msg) {
     window.onMeshMessage(msg);
   }
 }
-
+/**
+ * @function _handlePosition
+ * @description Processes incoming position payloads, updates the mesh state, and dispatches the position to the current page via window.onMeshMessage(msg).
+ * @private
+ * @memberof app
+ * @instance
+ * @param {Object} msg - The position payload containing position details.
+ * @returns {void}
+ */
 function _handlePosition(msg) {
   const s = window.meshState;
   const nodeId = msg.from_int;
@@ -249,10 +289,43 @@ function _handleNode(msg){
  //Handle payloads that contain node information
 }
 
-/* ════════════════════════════════════════════════════════════════════════════
-   SHARED UTILITY: HTML escaping
-   Exported on window so page scripts can call escapeHtml() without re-defining it.
-════════════════════════════════════════════════════════════════════════════ */
+/**
+ * @function _handleSdrStatus
+ * @description Updates the SDRangel connectivity indicator (header dot + UDP port badge)
+ * based on backend heartbeat status. This is independent of the WebSocket connection
+ * status shown in the footer.
+ * @private
+ * @memberof app
+ * @instance
+ * @param {Object} status - { connected: boolean, port: number }
+ * @returns {void}
+ */
+function _handleSdrStatus(status) {
+  if (_sdrDot) {
+    _sdrDot.style.background = status.connected ? '#22c55e' : '#ef4444';
+  }
+  if (_sdrPortBadge) {
+    _sdrPortBadge.textContent = status.connected ? `UDP ${status.port}` : `UDP ----`;
+    _sdrPortBadge.style.border = status.connected ? '1px solid #22c55e' : '1px solid #ef4444';
+    _sdrPortBadge.style.color = status.connected ? '#22c55e' : '#ef4444';
+    _sdrPortBadge.style.background = status.connected ? '#22c55e3a' : '#ef44443a';
+  }
+}
+
+/* Main App starts here */
+window.meshState = _loadState();
+
+/* Derived — not stored, always computed */
+Object.defineProperty(window.meshState, 'nodeCount', {
+  get() { return Object.keys(this.nodes).length; }
+});
+
+updateSidebarStats();
+
+updateUptime();
+setInterval(updateUptime, 1000);
+
+/* SHARED UTILITY: HTML escaping on window so page scripts can call escapeHtml() without re-defining it. */
 window.escapeHtml = function(str) {
     return String(str)
         .replace(/&/g,  '&amp;')
@@ -261,18 +334,14 @@ window.escapeHtml = function(str) {
         .replace(/"/g,  '&quot;')
         .replace(/'/g,  '&#39;');
 };
-
-/* ════════════════════════════════════════════════════════════════════════════
-   CLEANUP
-════════════════════════════════════════════════════════════════════════════ */
+/* CLEANUP */
 window.addEventListener('beforeunload', () => {
     if (_ws) {
         _ws.close();
     }
 });
-
 window.persistMeshState = _persistState;
 window.updateSidebarStats = updateSidebarStats;
 
-// Boot
+/* Boot */
 connectWebSocket();
