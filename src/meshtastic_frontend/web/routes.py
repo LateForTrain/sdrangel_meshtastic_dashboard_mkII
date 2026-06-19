@@ -1,6 +1,8 @@
 # routes.py
+from datetime import datetime, timedelta
+from typing import Optional
 from dataclasses import asdict
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect,Query
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 import json
@@ -9,7 +11,7 @@ import asyncio
 
 from ..config import config
 from ..queues import active_connections
-from ..db_manager import get_recent_messages
+from ..db_manager import get_recent_messages, get_telemetry_nodes, get_telemetry_history
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +25,16 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
             "api_port":    config.api_port,
             "active_page": active_page,
         }
+    
+    def _resolve_range(hours: Optional[int], start: Optional[datetime], end: Optional[datetime]):
+        resolved_end = end or datetime.now()
+        if start is not None:
+            resolved_start = start
+        elif hours is not None:
+            resolved_start = resolved_end - timedelta(hours=hours)
+        else:
+            resolved_start = resolved_end - timedelta(hours=6)
+        return resolved_start, resolved_end
 
     # Page routes
     @app.get("/", response_class=HTMLResponse)
@@ -49,10 +61,14 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
             context=_base_ctx(request, "config"),
         )
 
-    @app.get("/api/config")
-    async def api_config():
-        return JSONResponse(asdict(config))
-
+    @app.get("/telemetry", response_class=HTMLResponse)
+    async def page_telemetry(request: Request):
+        return templates.TemplateResponse(
+            request,
+            name="telemetry.html",
+            context=_base_ctx(request, "telemetry"),
+        )
+    
     # API routes
     @app.get("/status")
     async def status():
@@ -62,6 +78,25 @@ def add_routes(app: FastAPI, templates: Jinja2Templates):
             "api_port": config.api_port,
         }
 
+    @app.get("/api/config")
+    async def api_config():
+        return JSONResponse(asdict(config))
+    
+    @app.get("/api/telemetry/nodes")
+    async def api_telemetry_nodes():
+        return await get_telemetry_nodes()
+
+    @app.get("/api/telemetry/{node_id}")
+    async def api_telemetry_history(
+        node_id: int,
+        hours: Optional[int] = Query(None, ge=1),
+        start: Optional[datetime] = Query(None),
+        end: Optional[datetime] = Query(None),
+    ):
+        range_start, range_end = _resolve_range(hours, start, end)
+        return await get_telemetry_history(node_id, range_start, range_end)
+    
+    # WebSocket call
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket):
         await websocket.accept()

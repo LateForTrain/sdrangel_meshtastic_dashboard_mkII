@@ -69,7 +69,9 @@
 
 /* Card starts at full opacity since it loads live data */
 #sdr-bridge-card,
-#sdr-meshtastic-card {
+#sdr-meshtastic-card,
+#app-general-card,
+#app-other.card {
     opacity: 1;
 }
 
@@ -160,17 +162,17 @@
     <!-- Web Server -->
     <div class="config-section-title">🌐 Web Server</div>
     <div class="config-grid">
-        <div class="config-card">
+        <div class="config-card" id="app-general-card">
             <div class="config-card-title">General</div>
-            <div class="config-row"><label>API Host</label>         <span class="val">not connected</span></div>
-            <div class="config-row"><label>API Port</label>         <span class="val">not connected</span></div>
+            <div class="config-row"><label>API Host</label>         <span class="val" id="app-api-host">not connected</span></div>
+            <div class="config-row"><label>API Port</label>         <span class="val" id="app-api-port">not connected</span></div>
         </div>
-        <div class="config-card">
+        <div class="config-card" id = "app-other-card">
             <div class="config-card-title">Other</div>
-            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
-            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
-            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
-            <div class="config-row"><label>xxxx</label>             <span class="val">not connected</span></div>
+            <div class="config-row"><label>Logging</label>             <span class="val" id="app-log-level">not connected</span></div>
+            <div class="config-row"><label>Database</label>             <span class="val" id="app-db">not connected</span></div>
+            <div class="config-row"><label>Debug</label>             <span class="val" id="app-debug">not connected</span></div>
+            <div class="config-row"><label>Log File</label>             <span class="val" id="app-log-file">not connected</span></div>
         </div>
     </div>
     <!-- Web Server -->
@@ -183,17 +185,21 @@
 const SDRANGEL_BASE    = 'http://127.0.0.1:8091/sdrangel';
 const TARGET_CHANNEL_ID = 'MeshtasticDemod';
 
+const card1 = document.getElementById('sdr-bridge-card');
+const card2 = document.getElementById('sdr-meshtastic-card');
+const card3 = document.getElementById('app-general-card');
+const card4 = document.getElementById('app-other-card');
+
 /**
  * Fetches SDRangel state and populates the SDRangel Bridge config card.
  * Runs on page load and on manual refresh via the ↻ button.
  */
 async function loadSdrConfig() {
-    const card1 = document.getElementById('sdr-bridge-card');
-    const card2 = document.getElementById('sdr-meshtastic-card');
-
     // Dim card while loading so the user knows a refresh is in progress
     if (card1) card1.style.opacity = '0.55';
     if (card2) card2.style.opacity = '0.55';
+    if (card3) card3.style.opacity = '0.55';
+    if (card4) card4.style.opacity = '0.55';
 
     try {
         // ── Step 1: fetch root endpoint ─────────────────────────────────────
@@ -201,9 +207,9 @@ async function loadSdrConfig() {
         if (!rootResp.ok) throw new Error(`SDRangel unreachable (HTTP ${rootResp.status})`);
         const root = await rootResp.json();
 
-        setSdrRow('sdr-version',       root.version        ?? '—');
-        setSdrRow('sdr-os',            root.os             ?? '—');
-        setSdrRow('sdr-architecture',  root.architecture   ?? '—');
+        setRowData('sdr-version',       root.version        ?? '—');
+        setRowData('sdr-os',            root.os             ?? '—');
+        setRowData('sdr-architecture',  root.architecture   ?? '—');
 
         // ── Step 2: discover MeshtasticDemod channel ─────────────────────────
         let dsIndex     = null;
@@ -224,19 +230,20 @@ async function loadSdrConfig() {
 
         if (dsIndex === null) {
             // SDRangel is reachable but no MeshtasticDemod channel found
-            setSdrRow('sdr-hw-type',            '—');
-            setSdrRow('sdr-frequency',          '—');
-            setSdrRow('sdr-bandwidth',          '—');
-            setSdrRow('sdr-channel-state',      'no MeshtasticDemod found', false);
+            setRowData('sdr-hw-type',            '—');
+            setRowData('sdr-frequency',          '—');
+            setRowData('sdr-bandwidth',          '—');
+            setRowData('sdr-channel-state',      'no MeshtasticDemod found', false);
             
-            setSdrRow('mesh-udp-sending',       '—');
-            setSdrRow('mesh-region',            '—');
-            setSdrRow('mesh-preset',            '—');
-            setSdrRow('mesh-channel',           '—');
-            setSdrRow('mesh-spread-factor',     '—');
-            setSdrRow('mesh-preamble',          '—');
-            setSdrRow('mesh-decode-active',     '—');
+            setRowData('mesh-udp-sending',       '—');
+            setRowData('mesh-region',            '—');
+            setRowData('mesh-preset',            '—');
+            setRowData('mesh-channel',           '—');
+            setRowData('mesh-spread-factor',     '—');
+            setRowData('mesh-preamble',          '—');
+            setRowData('mesh-decode-active',     '—');
             if (card) card.style.opacity = '1';
+            loadWebConfig();
             return;
         }
 
@@ -260,52 +267,72 @@ async function loadSdrConfig() {
 
 
         // ── Populate rows ────────────────────────────────────────────────────
-        setSdrRow('sdr-hw-type',            dsData?.samplingDevice?.hwType ?? '—');
-        setSdrRow('sdr-frequency',          frequency ? `${(frequency / 1e6).toFixed(3)} MHz` : '—');
-        setSdrRow('sdr-bandwidth',          bandwidth ? `${(bandwidth / 1e3).toFixed(3)} kHz` : '—');
-        setSdrRow('sdr-channel-state', state,       state === 'running');
+        setRowData('sdr-hw-type',            dsData?.samplingDevice?.hwType ?? '—');
+        setRowData('sdr-frequency',          frequency ? `${(frequency / 1e6).toFixed(3)} MHz` : '—');
+        setRowData('sdr-bandwidth',          bandwidth ? `${(bandwidth / 1e3).toFixed(3)} kHz` : '—');
+        setRowData('sdr-channel-state', state,       state === 'running');
 
         if (state === 'running' && chSettings.sendViaUDP === 1){
-            setSdrRow('mesh-udp-sending',       chSettings.udpAddress + ' : ' + chSettings.udpPort)
+            setRowData('mesh-udp-sending',       chSettings.udpAddress + ' : ' + chSettings.udpPort)
         } else{
-            setSdrRow('mesh-udp-sending',       '—')
+            setRowData('mesh-udp-sending',       '—')
         }
         
-        setSdrRow('mesh-region',            '—');
-        setSdrRow('mesh-preset',            '—');
-        setSdrRow('mesh-channel',           '—');
-        setSdrRow('mesh-spread-factor',     chSettings.spreadFactor  != null ? String(chSettings.spreadFactor) : '—');
-        setSdrRow('mesh-preamble',          chSettings.preambleChirps  != null ? String(chSettings.preambleChirps) : '—');
-        setSdrRow('mesh-decode-active',     chSettings.decodeActive === 1 ? 'yes' : 'no');
+        setRowData('mesh-region',            '—');
+        setRowData('mesh-preset',            '—');
+        setRowData('mesh-channel',           '—');
+        setRowData('mesh-spread-factor',     chSettings.spreadFactor  != null ? String(chSettings.spreadFactor) : '—');
+        setRowData('mesh-preamble',          chSettings.preambleChirps  != null ? String(chSettings.preambleChirps) : '—');
+        setRowData('mesh-decode-active',     chSettings.decodeActive === 1 ? 'yes' : 'no');
 
         if (card1) card1.style.opacity = '1';
         if (card2) card2.style.opacity = '1';
+
+        loadWebConfig();
 
     } catch (err) {
         console.error('SDRangel config fetch failed:', err);
 
         // Mark every dynamic row as unreachable so the user gets clear feedback
-        setSdrRow('sdr-version',            '—', false);
-        setSdrRow('sdr-os',                 '—', false);
-        setSdrRow('sdr-architecture',  '—', false);
-        setSdrRow('sdr-hw-type',            '—', false);
-        setSdrRow('sdr-frequency',          '—', false);
-        setSdrRow('sdr-bandwidth',          '—', false);
-        setSdrRow('sdr-channel-state',      'unreachable', false);
+        setRowData('sdr-version',            '—', false);
+        setRowData('sdr-os',                 '—', false);
+        setRowData('sdr-architecture',  '—', false);
+        setRowData('sdr-hw-type',            '—', false);
+        setRowData('sdr-frequency',          '—', false);
+        setRowData('sdr-bandwidth',          '—', false);
+        setRowData('sdr-channel-state',      'unreachable', false);
         
-        setSdrRow('mesh-udp-sending',       '—', false);
-        setSdrRow('mesh-region',            '—', false);
-        setSdrRow('mesh-preset',            '—', false);
-        setSdrRow('mesh-channel',           '—', false);
-        setSdrRow('mesh-spread-factor',     '—', false);
-        setSdrRow('mesh-preamble',          '—', false);
-        setSdrRow('mesh-decode-active',     '—', false);
+        setRowData('mesh-udp-sending',       '—', false);
+        setRowData('mesh-region',            '—', false);
+        setRowData('mesh-preset',            '—', false);
+        setRowData('mesh-channel',           '—', false);
+        setRowData('mesh-spread-factor',     '—', false);
+        setRowData('mesh-preamble',          '—', false);
+        setRowData('mesh-decode-active',     '—', false);
 
         if (card1) card1.style.opacity = '1';
         if (card2) card2.style.opacity = '1';
+
+        loadWebConfig();
     }
 }
 
+async function loadWebConfig() {
+    const cfgResp = await fetch('/api/config');
+    const cfg = cfgResp.ok ? await cfgResp.json() : null;
+
+    setRowData('app-api-host', cfg.api_host ?? '—')
+    setRowData('app-api-port', cfg.api_port ?? '—')
+
+    setRowData('app-log-level', cfg.log_level ?? '—')
+    const db_path = cfg.db_dir + '/' + cfg.db_name
+    setRowData('app-db', db_path ?? '—')
+    setRowData('app-debug', cfg.debug_active ?? '—')
+    setRowData('app-log-file', cfg.debug_log ?? '—')
+
+    if (card3) card3.style.opacity = '1';
+    if (card4) card4.style.opacity = '1';
+}
 /**
  * Updates a config row value span by element id.
  *
@@ -316,7 +343,7 @@ async function loadSdrConfig() {
  *   false     → red            (.val.err)   — value indicates a problem
  *   undefined → neutral accent (.val.live)  — informational, no pass/fail meaning
  */
-function setSdrRow(id, text, live) {
+function setRowData(id, text, live) {
     const el = document.getElementById(id);
     if (!el) return;
     el.textContent = text;

@@ -16,9 +16,10 @@
 const SK = {
   START_TIME:    'meshStartTime',
   MSG_COUNT:     'meshMsgCount',
-  MESSAGES:      'meshMessages',      // [] — full message log for chat replay
-  POSITIONS:     'meshPositions',     // {} — nodeId → latest position for map replay
-  NODES:         'meshNodes',         // {} — nodeId → { long_name, lastSeen }
+  MESSAGES:      'meshMessages',
+  POSITIONS:     'meshPositions',
+  NODES:         'meshNodes',
+  SDR_STATUS:    'meshSdrStatus',   // {connected, port} — last known SDRangel heartbeat
 };
 
 const MAX_STORED_MESSAGES = 50;
@@ -281,9 +282,11 @@ function _handlePosition(msg) {
   }
 }
 
-function _handleTelemetry(msg){
- //Handle payloads that contain telemety information
-}
+function _handleTelemetry(msg) {
+     if (typeof window.onTelemetryUpdate === 'function') {
+       window.onTelemetryUpdate(msg);
+     }
+   }
 
 function _handleNode(msg){
  //Handle payloads that contain node information
@@ -310,6 +313,10 @@ function _handleSdrStatus(status) {
     _sdrPortBadge.style.color = status.connected ? '#22c55e' : '#ef4444';
     _sdrPortBadge.style.background = status.connected ? '#22c55e3a' : '#ef44443a';
   }
+
+  try {
+    sessionStorage.setItem(SK.SDR_STATUS, JSON.stringify(status));
+  } catch { /* sessionStorage full or unavailable — non-critical */ }
 }
 
 /* Main App starts here */
@@ -342,6 +349,16 @@ window.addEventListener('beforeunload', () => {
 });
 window.persistMeshState = _persistState;
 window.updateSidebarStats = updateSidebarStats;
+
+/* Restore last known SDR status immediately on load, before the new
+   WS connection has a chance to report anything — this is what stops
+   the dot flashing red on every page navigation. */
+try {
+  const lastSdrStatus = JSON.parse(sessionStorage.getItem(SK.SDR_STATUS) || 'null');
+  if (lastSdrStatus) {
+    _handleSdrStatus(lastSdrStatus);
+  }
+} catch { /* corrupt or missing entry — fall back to default red, fine */ }
 
 /* Boot */
 connectWebSocket();

@@ -1,0 +1,343 @@
+{% extends "base.html" %}
+
+{% block title %}Telemetry — Meshtastic Live{% endblock %}
+
+{% block extra_styles %}
+.telemetry-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+.telemetry-charts {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.chart-card {
+    background:    var(--bg-card);
+    border:        1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding:       16px 20px;
+    flex-shrink:   0;
+}
+
+.chart-card-title {
+    font-size:      12px;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color:          var(--text-muted);
+    margin-bottom:  10px;
+    display:        flex;
+    justify-content: space-between;
+}
+
+.chart-card-title .latest {
+    font-family:    var(--font-mono);
+    color:          var(--text-secondary);
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.chart-card canvas { height: 200px !important; }
+
+.range-toggle { display: flex; gap: 6px; }
+
+.range-btn.active { border-color: var(--accent); color: var(--accent); }
+
+/* ── Right panel: node list ───────────────────────────────────────────── */
+.telemetry-nodes {
+    width:          240px;
+    flex-shrink:    0;
+    border-left:    1px solid var(--border);
+    overflow-y:     auto;
+    padding:        16px 12px;
+    display:        flex;
+    flex-direction: column;
+    gap:            8px;
+}
+
+.telemetry-nodes-label {
+    font-size:      10px;
+    font-weight:    600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color:          var(--text-muted);
+    padding:        0 8px 4px;
+}
+
+.node-card {
+    background:    var(--bg-card);
+    border:        1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding:       10px 12px;
+    cursor:        pointer;
+    transition:    border-color 0.15s, background 0.15s;
+}
+
+.node-card:hover    { border-color: var(--border-light); }
+.node-card.selected { border-color: var(--accent); background: var(--bg-card-hover); }
+
+.node-card-name {
+    font-size:     13px;
+    font-weight:   600;
+    color:         var(--text-primary);
+    margin-bottom: 4px;
+    white-space:   nowrap;
+    overflow:      hidden;
+    text-overflow: ellipsis;
+}
+
+.node-card-meta {
+    font-family: var(--font-mono);
+    font-size:   11px;
+    color:       var(--text-secondary);
+    display:     flex;
+    justify-content: space-between;
+}
+
+.node-card-empty {
+    font-size:   12px;
+    color:       var(--text-muted);
+    text-align:  center;
+    padding:     24px 12px;
+    line-height: 1.6;
+}
+{% endblock %}
+
+
+{% block content %}
+<div class="toolbar">
+    <h2>Telemetry</h2>
+    <div class="range-toggle">
+        <button class="btn-ghost range-btn" data-hours="1">1H</button>
+        <button class="btn-ghost range-btn active" data-hours="6">6H</button>
+        <button class="btn-ghost range-btn" data-hours="24">24H</button>
+    </div>
+</div>
+
+<div class="telemetry-layout">
+
+    <div class="telemetry-charts">
+        <div class="chart-card">
+            <div class="chart-card-title"><span>Power</span><span class="latest" id="latest-power"></span></div>
+            <canvas id="chart-power"></canvas>
+        </div>
+        <div class="chart-card">
+            <div class="chart-card-title"><span>Network Utilization</span><span class="latest" id="latest-netutil"></span></div>
+            <canvas id="chart-netutil"></canvas>
+        </div>
+        <div class="chart-card">
+            <div class="chart-card-title"><span>Environment</span><span class="latest" id="latest-env"></span></div>
+            <canvas id="chart-env"></canvas>
+        </div>
+        <div class="chart-card">
+            <div class="chart-card-title"><span>Signal Quality</span><span class="latest" id="latest-signal"></span></div>
+            <canvas id="chart-signal"></canvas>
+        </div>
+    </div>
+
+    <div class="telemetry-nodes">
+        <div class="telemetry-nodes-label">Nodes</div>
+        <div id="node-list"></div>
+    </div>
+
+</div>
+{% endblock %}
+
+
+{% block page_scripts %}
+<!-- Self-hosted, same offline-first pattern as the fonts in base.html -->
+<script src="/static/vendor/Chart.js"></script>
+<script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
+
+<script>
+const COLORS = {
+    green:  '#22c55e',
+    blue:   '#3b82f6',
+    yellow: '#f59e0b',
+    red:    '#ef4444',
+    grey:   '#94a3b8',
+};
+
+// Maps chart key -> [ [field, datasetIndex], ... ] so a live WS message
+// knows which dataset to push a point into without rebuilding the chart.
+const CHART_FIELDS = {
+    power:   [['battery', 0], ['voltage', 1]],
+    netutil: [['channel_util', 0], ['air_util_tx', 1]],
+    env:     [['temperature', 0], ['humidity', 1]],
+    signal:  [['snr', 0], ['rssi', 1]],
+};
+
+let charts = {};
+let selectedNodeId = null;   // number, matches node_id from the API
+let currentHours = 6;
+
+function axisOpts(extra = {}) {
+    return Object.assign(
+        { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e3a5f' } },
+        extra
+    );
+}
+
+function buildChart(canvasId, datasets, scales) {
+    return new Chart(document.getElementById(canvasId), {
+        type: 'line',
+        data: { datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: false,
+            parsing: false,
+            interaction: { mode: 'index', intersect: false },
+            elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 1.5 } },
+            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 10 } } },
+            scales,
+        },
+    });
+}
+
+function toPoints(rows, field) {
+    return rows
+        .filter(r => r[field] != null)
+        .map(r => ({ x: new Date(r.timestamp), y: r[field] }));
+}
+
+function buildAllCharts(rows) {
+    Object.values(charts).forEach(c => c.destroy());
+
+    charts.power = buildChart('chart-power', [
+        { label: 'Battery %', data: toPoints(rows, 'battery'), borderColor: COLORS.green, yAxisID: 'y' },
+        { label: 'Voltage V', data: toPoints(rows, 'voltage'), borderColor: COLORS.blue, yAxisID: 'y2' },
+    ], {
+        x:  { type: 'time', ticks: axisOpts().ticks },
+        y:  axisOpts({ position: 'left', min: 0, max: 100 }),
+        y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }),
+    });
+
+    charts.netutil = buildChart('chart-netutil', [
+        { label: 'Channel Util %', data: toPoints(rows, 'channel_util'), borderColor: COLORS.yellow },
+        { label: 'Air Util TX %',  data: toPoints(rows, 'air_util_tx'), borderColor: COLORS.blue },
+    ], {
+        x: { type: 'time', ticks: axisOpts().ticks },
+        y: axisOpts({ min: 0 }),
+    });
+
+    charts.env = buildChart('chart-env', [
+        { label: 'Temp °C',    data: toPoints(rows, 'temperature'), borderColor: COLORS.red, yAxisID: 'y' },
+        { label: 'Humidity %', data: toPoints(rows, 'humidity'), borderColor: COLORS.blue, yAxisID: 'y2' },
+    ], {
+        x:  { type: 'time', ticks: axisOpts().ticks },
+        y:  axisOpts({ position: 'left' }),
+        y2: axisOpts({ position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }),
+    });
+
+    charts.signal = buildChart('chart-signal', [
+        { label: 'SNR dB',   data: toPoints(rows, 'snr'), borderColor: COLORS.green, yAxisID: 'y' },
+        { label: 'RSSI dBm', data: toPoints(rows, 'rssi'), borderColor: COLORS.grey, yAxisID: 'y2' },
+    ], {
+        x:  { type: 'time', ticks: axisOpts().ticks },
+        y:  axisOpts({ position: 'left' }),
+        y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }),
+    });
+}
+
+function appendLivePoint(msg) {
+    const ts = new Date();
+    Object.entries(CHART_FIELDS).forEach(([chartKey, fields]) => {
+        const chart = charts[chartKey];
+        if (!chart) return;
+        let changed = false;
+        fields.forEach(([field, dsIndex]) => {
+            if (msg[field] != null) {
+                chart.data.datasets[dsIndex].data.push({ x: ts, y: msg[field] });
+                changed = true;
+            }
+        });
+        if (changed) chart.update('none'); // skip animation, just redraw
+    });
+}
+
+async function fetchNodeList() {
+    try {
+        const res = await fetch('/api/telemetry/nodes');
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        console.error('Failed to fetch telemetry node list', err);
+        return [];
+    }
+}
+
+async function fetchTelemetryHistory(nodeId, hours) {
+    try {
+        const res = await fetch(`/api/telemetry/${nodeId}?hours=${hours}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+    } catch (err) {
+        console.error('Failed to fetch telemetry history', err);
+        return [];
+    }
+}
+
+async function selectNode(nodeId) {
+    selectedNodeId = nodeId;
+    await renderNodeList();
+    const rows = await fetchTelemetryHistory(nodeId, currentHours);
+    buildAllCharts(rows);
+}
+
+async function renderNodeList() {
+    const container = document.getElementById('node-list');
+    const nodes = await fetchNodeList();
+
+    if (nodes.length === 0) {
+        container.innerHTML = '<div class="node-card-empty">No telemetry received yet</div>';
+        return;
+    }
+
+    container.innerHTML = nodes.map(n => {
+        const batt = n.battery != null ? `${n.battery}%` : '—';
+        return `
+          <div class="node-card ${n.node_id === selectedNodeId ? 'selected' : ''}" data-node-id="${n.node_id}">
+            <div class="node-card-name">${window.escapeHtml(n.long_name || n.node_id)}</div>
+            <div class="node-card-meta"><span>Batt</span><span>${batt}</span></div>
+          </div>`;
+    }).join('');
+
+    container.querySelectorAll('.node-card').forEach(el => {
+        el.addEventListener('click', () => selectNode(Number(el.dataset.nodeId)));
+    });
+
+    if (selectedNodeId == null && nodes.length > 0) {
+        selectNode(nodes[0].node_id);
+    }
+}
+
+document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentHours = Number(btn.dataset.hours);
+        if (selectedNodeId != null) selectNode(selectedNodeId);
+    });
+});
+
+// Page-specific hook, called from app.js's _handleTelemetry() on every
+// telemetry_update WS message — see _handleTelemetry in app.js.
+window.onTelemetryUpdate = function (msg) {
+    renderNodeList();
+    if (selectedNodeId != null && Number(msg.from_int) === selectedNodeId) {
+        appendLivePoint(msg);
+    }
+};
+
+renderNodeList();
+</script>
+{% endblock %}

@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional, List
 
 # SQLAlchemy imports
-from sqlalchemy import select, Index
+from sqlalchemy import select, Index, func
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -92,6 +92,10 @@ class DBTelemetry(Base):
     iaq: Mapped[Optional[int]]
     snr: Mapped[Optional[float]]
     rssi: Mapped[Optional[int]]
+
+    __table_args__ = (
+        Index('idx_telemetry_node_time', 'node_id', 'timestamp'),
+    )
 
 # Engine & Session
 async_engine = create_async_engine(DATABASE_URL, echo=False)
@@ -202,7 +206,28 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
                 session.add(db_msg)
 
             elif portnum == "TELEMETRY_APP":
-                telemetry = Telemetry()
+                telemetry = Telemetry(
+                    node_id=p.get('from_int'),
+                    telemetry_type= "DEVICE",
+                    timestamp=datetime.now(),
+                    
+                    # Device metrics
+                    battery=p.get('battery',None),
+                    voltage=p.get('voltage',None),
+                    channel_util=p.get('channel_util',None),
+                    air_util_tx=p.get('air_util_tx',None),
+                    uptime_seconds=p.get('uptime_seconds',None),
+                    
+                    # Environment metrics
+                    temperature=p.get('temperature',None),
+                    humidity=p.get('humidity',None),
+                    pressure=p.get('pressure',None),
+                    iaq=p.get('iaq',None),
+    
+                    # Signal metrics
+                    snr=p.get('snr',None),
+                    rssi=p.get('rssi',None),
+                )
                 session.add(DBTelemetry(**telemetry.__dict__))
 
             await session.commit()
@@ -251,6 +276,95 @@ async def get_recent_messages(limit: int = 20) -> List[dict]:
             logger.error(f"Failed to fetch recent messages: {e}")
             return []
    
+async def get_telemetry_nodes() -> List[dict]:
+    """
+    Nodes that have ever sent telemetry, with their latest known battery %,
+    for the telemetry page's right-hand node list.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            # "Latest non-null battery per node" — a plain latest-row-per-node
+            # query would give nulls half the time, since battery and
+            # temperature/humidity arrive in separate packets.
+            ranked = (
+                select(
+                    DBTelemetry.node_id,
+                    DBTelemetry.battery,
+                    func.row_number()
+                    .over(
+                        partition_by=DBTelemetry.node_id,
+                        order_by=DBTelemetry.timestamp.desc(),
+                    )
+                    .label("rn"),
+                )
+                .where(DBTelemetry.battery.is_not(None))
+                .subquery()
+            )
+            latest_battery = (
+                select(ranked.c.node_id, ranked.c.battery)
+                .where(ranked.c.rn == 1)
+                .subquery()
+            )
+
+            telemetry_node_ids = select(DBTelemetry.node_id).distinct().subquery()
+
+            stmt = (
+                select(DBNode.node_id, DBNode.long_name, latest_battery.c.battery)
+                .join(telemetry_node_ids, telemetry_node_ids.c.node_id == DBNode.node_id)
+                .outerjoin(latest_battery, latest_battery.c.node_id == DBNode.node_id)
+                .order_by(DBNode.long_name)
+            )
+
+            result = await session.execute(stmt)
+            rows = result.all()
+
+            return [
+                {"node_id": r.node_id, "long_name": r.long_name, "battery": r.battery}
+                for r in rows
+            ]
+        except Exception as e:
+            logger.error(f"Failed to fetch telemetry node list: {e}")
+            return []
+
+async def get_telemetry_history(node_id: int, start: datetime, end: datetime) -> List[dict]:
+    """
+    Telemetry rows for one node within a time window, ascending by timestamp,
+    for the telemetry page's charts.
+    """
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                select(DBTelemetry)
+                .where(
+                    DBTelemetry.node_id == node_id,
+                    DBTelemetry.timestamp >= start,
+                    DBTelemetry.timestamp <= end,
+                )
+                .order_by(DBTelemetry.timestamp.asc())
+            )
+            rows = result.scalars().all()
+
+            return [
+                {
+                    "timestamp": r.timestamp.isoformat(),
+                    "battery": r.battery,
+                    "voltage": r.voltage,
+                    "channel_util": r.channel_util,
+                    "air_util_tx": r.air_util_tx,
+                    "uptime_seconds": r.uptime_seconds,
+                    "temperature": r.temperature,
+                    "humidity": r.humidity,
+                    "pressure": r.pressure,
+                    "iaq": r.iaq,
+                    "snr": r.snr,
+                    "rssi": r.rssi,
+                }
+                for r in rows
+            ]
+        except Exception as e:
+            logger.error(f"Failed to fetch telemetry history for node {node_id}: {e}")
+            return []
+        
 # ========================== MAIN TASK ==========================
 async def db_manager_task():
     """
