@@ -1,21 +1,37 @@
 # Meshtastic SDRangel Frontend (mkII)
 
-**Goal**: Build a Python application that receives Meshtastic packets via UDP (from SDRangel), decodes them using the official meshtastic Python library, stores the data, and serves a real-time web interface.
+## 🎯 Goal
+Build a Python application that receives Meshtastic packets via UDP (from SDRangel), decodes them using the official meshtastic Python library, stores the data, and serves a real-time web interface.
 
-## Tech Stack
+## 🧰 Tech Stack
 - Python 3.11+
 - Asyncio + `asyncio.Queue`
 - FastAPI (with WebSockets)
-- SQLAlchemy with aiosqlite
+- SQLAlchemy with aiosqllet
 - Official `meshtastic` Python library (decoding only)
 - Pydantic for validation
 - Jinja2 for templating
 - Uvicorn ASGI server
 
-## Key Design Decisions
+## 🧠 Key Design Decisions
 - Pure asyncio (no threads)
 - Central queues for communication
 - Reliable task wrapper that auto-restarts crashed tasks
+- Clean separation of concerns
+- WebSocket support for real-time updates
+
+## 📦 Installation
+
+1. Ensure you have Python 3.11+ installed.
+2. Clone the repository and navigate to the project directory.
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+   Or if using uv:
+   ```bash
+   uv sync
+   ```
 - Clean separation of concerns
 - WebSocket support for real-time updates
 

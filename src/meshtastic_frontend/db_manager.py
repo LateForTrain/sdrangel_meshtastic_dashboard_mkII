@@ -1,5 +1,20 @@
-"""Module Description: This module contains the implementation of the database manager used to store and retrieve data related to Meshtastic."""
-#  General inports
+"""
+Database Manager Module
+
+This module provides the implementation for managing the database operations
+related to Meshtastic devices. It includes functionalities for storing and
+retrieving node information, position data, text messages, and telemetry data.
+
+Key Features:
+- Asynchronous database operations using SQLAlchemy
+- Support for multiple data types (nodes, positions, messages, telemetry)
+- Efficient data retrieval for dashboard and telemetry pages
+- Handling of duplicate data with unique constraints
+- Integration with the main message queue for packet processing
+
+The module uses SQLite as the database backend and is designed to be
+scalable for future database migrations.
+"""
 import asyncio
 import logging
 from pathlib import Path
@@ -103,7 +118,22 @@ AsyncSessionLocal = async_sessionmaker(async_engine, expire_on_commit=False)
 
 async def init_db():
     """
-    Init for db manager
+    Initialize the database by creating all tables if they do not exist.
+    
+    This function creates the database schema using SQLAlchemy's metadata.create_all()
+    method. It is called once when the database manager starts up to ensure that
+    all required tables are present in the database.
+    
+    Args:
+        None
+    
+    Returns:
+        None
+    
+    Side Effects:
+        - Creates the database file if it does not exist
+        - Creates all tables defined in the Base.metadata
+        - Logs a message indicating the database has been initialized
     """
     async with async_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -245,15 +275,6 @@ async def save_decoded_packet(decoded: DecodedMeshPacket):
             logger.error(f"Failed to save packet to database: {e}", exc_info=True)
 
 async def get_recent_messages(limit: int = 20) -> List[dict]:
-    """
-    Simple query to get recent text messages for the dashboard
-    
-    Args:
-        limit (int): Number of messages to retrieve.
-    
-    Return:
-        List[dict]: List of recent messages.
-    """
     async with AsyncSessionLocal() as session:
         try:
             result = await session.execute(
@@ -278,8 +299,22 @@ async def get_recent_messages(limit: int = 20) -> List[dict]:
    
 async def get_telemetry_nodes() -> List[dict]:
     """
-    Nodes that have ever sent telemetry, with their latest known battery %,
-    for the telemetry page's right-hand node list.
+    Fetch nodes that have reported telemetry along with their latest known battery levels.
+
+    The function performs a complex query to identify the most recent non-null 
+    battery reading for every node using a window function, then joins this data 
+    with the master node list to provide human-readable names.
+
+    Returns:
+        List[dict]: A list of dictionaries containing node metadata.
+            Each dictionary contains:
+            - 'node_id' (int/str): The unique identifier for the hardware node.
+            - 'long_name' (str): The display name of the node.
+            - 'battery' (float|None): The most recent battery percentage recorded.
+
+    Note:
+        If a database error occurs, an empty list is returned and the 
+        error is logged to the system logs.
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -327,9 +362,23 @@ async def get_telemetry_nodes() -> List[dict]:
             return []
 
 async def get_telemetry_history(node_id: int, start: datetime, end: datetime) -> List[dict]:
-    """
-    Telemetry rows for one node within a time window, ascending by timestamp,
-    for the telemetry page's charts.
+    """Retrieve telemetry records for a specific node within a given time window.
+
+    Fetches data from the database filtered by node ID and timestamp range, 
+    ordered chronologically. The resulting records are formatted into a list of 
+    dictionaries containing various sensor metrics suitable for visualization in charts.
+
+    Args:
+        node_id (int): The unique identifier for the specific hardware node.
+        start (datetime): The start of the time window for the query.
+        end (datetime): The end of the time window for the query.
+
+    Returns:
+        List[dict]: A list of dictionaries, where each dictionary contains 
+            the following keys: 'timestamp' (ISO string), 'battery', 
+            'voltage', 'channel_util', 'air_util_tx', 'uptime_seconds', 
+            'temperature', 'humidity', 'pressure', 'iaq', 'snr', and 'rssi'. 
+            Returns an empty list if a database error occurs.
     """
     async with AsyncSessionLocal() as session:
         try:
@@ -368,7 +417,27 @@ async def get_telemetry_history(node_id: int, start: datetime, end: datetime) ->
 # ========================== MAIN TASK ==========================
 async def db_manager_task():
     """
-    Main task for the database manager.
+    Core database worker task for Meshtastic frontend.
+
+    This async task manages all database operations for the application:
+    - Initializes the database schema
+    - Processes incoming packets from the message queue
+    - Stores node data, positions, messages, and telemetry
+    - Handles duplicate data via unique constraints
+    - Provides data for dashboard visualization
+
+    The task runs indefinitely until cancelled, processing packets
+    asynchronously and persisting data to SQLite.
+
+    Args:
+        None
+
+    Returns:
+        None
+
+    Raises:
+        asyncio.CancelledError: When the task is explicitly cancelled
+        Exception: For any unexpected errors during database operations
     """
     logger.info("Database Manager Task started")
     await init_db()
