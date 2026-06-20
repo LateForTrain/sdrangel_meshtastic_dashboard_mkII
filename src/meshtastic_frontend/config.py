@@ -1,3 +1,16 @@
+"""Configuration management for Meshtastic frontend.
+
+Loads and provides configuration settings from TOML files using
+dataclasses, exposing a global config object for use throughout
+the application.
+
+Dependencies:
+    tomllib, dataclasses, pathlib
+
+Assumptions:
+    config.toml exists in the project root and contains the
+    required configuration sections.
+"""
 from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path

@@ -1,4 +1,25 @@
-"""This module contains the implementation of the decoder used for decoding and processing LoRa packets received from Meshtastic.
+"""
+Decodes raw Meshtastic packets into structured data.
+
+This module handles the full decoding pipeline for Meshtastic packets:
+1. Decrypts encrypted payloads using AES-CTR
+2. Parses protobuf data for different packet types
+3. Deduplicates packets to avoid processing duplicates
+4. Routes decoded data to database and broadcast systems
+
+Inputs:
+    Raw packets from UDP listener (RawPacketEvent)
+
+Outputs:
+    DecodedMeshPacket objects sent to database and broadcast queues
+
+Dependencies:
+    cryptography for AES decryption
+    protobuf for data parsing
+
+Role:
+    Processes incoming packets, decrypts them if needed, and routes
+    the decoded data to appropriate systems for storage and broadcasting
 """
 import asyncio
 import logging
@@ -284,6 +305,7 @@ async def decoder_task():
 
                 # Decode content
                 decoded_payload = decode_payload(decrypt_body)
+                was_encrypted = decoded_payload.get("decode_error") is None
 
                 # Check for duplicates
                 if deduplicator.is_duplicate(
