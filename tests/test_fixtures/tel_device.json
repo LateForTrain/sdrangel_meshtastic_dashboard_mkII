@@ -2,7 +2,7 @@
   "header": {
     "to":        "0xffffffff",
     "from":      "0x00000001",
-    "from_int":  2,
+    "from_int":  1,
     "id":        3735928562,
     "id_hex":    "0xdeadbef2",
     "hop_limit": 3,

@@ -2,7 +2,7 @@
   "header": {
     "to":        "0xffffffff",
     "from":      "0x00000001",
-    "from_int":  1,
+    "from_int":  2,
     "id":        3735928561,
     "id_hex":    "0xdeadbef1",
     "hop_limit": 3,
@@ -15,9 +15,9 @@
     "portnum":    "NODEINFO_APP",
     "portnum_id": 4,
     "node_id":    "0x1a2b3c4d",
-    "long_name":  "Test Node",
-    "short_name": "TST",
-    "hw_model":   3
+    "long_name":  "Test Node 2",
+    "short_name": "TST2",
+    "hw_model":   "Heltec V4"
   },
   "was_encrypted": false
 }

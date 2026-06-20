@@ -38,7 +38,6 @@ import asyncio
 import logging
 import json
 from .queues import broadcast_queue, active_connections
-from .models import DecodedMeshPacket
 
 logger = logging.getLogger(__name__)
 

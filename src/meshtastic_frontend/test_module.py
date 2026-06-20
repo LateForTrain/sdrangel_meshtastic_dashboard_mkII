@@ -25,10 +25,10 @@ from .queues import db_queue, broadcast_queue
 # ── Defaults ──────────────────────────────────────────────────────────────────
 
 
-TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/text_message.json"
+#TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/text_message.json"
 #TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/position.json"
 #TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/node.json"
-#TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/tel_device.json"
+TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/tel_device.json"
 #TEST_MSG = Path(__file__).parent.parent.parent / "tests/test_fixtures/tel_env.json"
 
 # Fields that decode_payload() always emits; anything missing from the JSON

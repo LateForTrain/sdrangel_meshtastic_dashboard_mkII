@@ -119,6 +119,7 @@
         <button class="btn-ghost range-btn" data-hours="1">1H</button>
         <button class="btn-ghost range-btn active" data-hours="6">6H</button>
         <button class="btn-ghost range-btn" data-hours="24">24H</button>
+        <button class="btn-ghost range-btn" data-hours="72">3D</button>
     </div>
 </div>
 
@@ -153,7 +154,6 @@
 
 
 {% block page_scripts %}
-<!-- Self-hosted, same offline-first pattern as the fonts in base.html -->
 <script src="/static/vendor/Chart.js"></script>
 <script src="/static/vendor/chartjs-adapter-date-fns.bundle.min.js"></script>
 
@@ -166,8 +166,6 @@ const COLORS = {
     grey:   '#94a3b8',
 };
 
-// Maps chart key -> [ [field, datasetIndex], ... ] so a live WS message
-// knows which dataset to push a point into without rebuilding the chart.
 const CHART_FIELDS = {
     power:   [['battery', 0], ['voltage', 1]],
     netutil: [['channel_util', 0], ['air_util_tx', 1]],
@@ -176,8 +174,17 @@ const CHART_FIELDS = {
 };
 
 let charts = {};
-let selectedNodeId = null;   // number, matches node_id from the API
+let selectedNodeId = null;
 let currentHours = 6;
+
+function getMaxAgeMs() {
+    return currentHours * 60 * 60 * 1000;
+}
+
+function pruneOldData(dataset) {
+    const cutoff = Date.now() - getMaxAgeMs();
+    dataset.data = dataset.data.filter(point => point.x.getTime() > cutoff);
+}
 
 function axisOpts(extra = {}) {
     return Object.assign(
@@ -186,7 +193,31 @@ function axisOpts(extra = {}) {
     );
 }
 
-function buildChart(canvasId, datasets, scales) {
+function getTimeScaleOptions() {
+    let unit, displayFormat;
+
+    if (currentHours <= 6) {
+        unit = 'minute';
+        displayFormat = 'HH:mm';
+    } else if (currentHours <= 24) {
+        unit = 'hour';
+        displayFormat = 'HH:mm';
+    } else {
+        unit = 'day';
+        displayFormat = 'MMM d';
+    }
+
+    return {
+        unit: unit,
+        displayFormats: { [unit]: displayFormat }
+    };
+}
+
+function buildChart(canvasId, datasets, extraScales = {}) {
+    const timeScale = getTimeScaleOptions();
+    const now = Date.now();
+    const rangeStart = now - getMaxAgeMs();
+
     return new Chart(document.getElementById(canvasId), {
         type: 'line',
         data: { datasets },
@@ -197,8 +228,26 @@ function buildChart(canvasId, datasets, scales) {
             parsing: false,
             interaction: { mode: 'index', intersect: false },
             elements: { point: { radius: 0 }, line: { tension: 0.25, borderWidth: 1.5 } },
-            plugins: { legend: { labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 10 } } },
-            scales,
+            plugins: { 
+                legend: { 
+                    labels: { color: '#94a3b8', font: { size: 11 }, boxWidth: 10 } 
+                } 
+            },
+            scales: {
+                x: {
+                    type: 'time',
+                    time: timeScale,
+                    min: rangeStart,
+                    max: now,
+                    ticks: {
+                        ...axisOpts().ticks,
+                        source: 'auto',
+                        maxTicksLimit: 12
+                    },
+                    ...extraScales.x
+                },
+                ...extraScales
+            },
         },
     });
 }
@@ -211,12 +260,12 @@ function toPoints(rows, field) {
 
 function buildAllCharts(rows) {
     Object.values(charts).forEach(c => c.destroy());
+    charts = {};
 
     charts.power = buildChart('chart-power', [
         { label: 'Battery %', data: toPoints(rows, 'battery'), borderColor: COLORS.green, yAxisID: 'y' },
         { label: 'Voltage V', data: toPoints(rows, 'voltage'), borderColor: COLORS.blue, yAxisID: 'y2' },
     ], {
-        x:  { type: 'time', ticks: axisOpts().ticks },
         y:  axisOpts({ position: 'left', min: 0, max: 100 }),
         y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }),
     });
@@ -224,16 +273,14 @@ function buildAllCharts(rows) {
     charts.netutil = buildChart('chart-netutil', [
         { label: 'Channel Util %', data: toPoints(rows, 'channel_util'), borderColor: COLORS.yellow },
         { label: 'Air Util TX %',  data: toPoints(rows, 'air_util_tx'), borderColor: COLORS.blue },
-    ], {
-        x: { type: 'time', ticks: axisOpts().ticks },
-        y: axisOpts({ min: 0 }),
+    ], { 
+        y: axisOpts({ min: 0 }) 
     });
 
     charts.env = buildChart('chart-env', [
         { label: 'Temp °C',    data: toPoints(rows, 'temperature'), borderColor: COLORS.red, yAxisID: 'y' },
         { label: 'Humidity %', data: toPoints(rows, 'humidity'), borderColor: COLORS.blue, yAxisID: 'y2' },
     ], {
-        x:  { type: 'time', ticks: axisOpts().ticks },
         y:  axisOpts({ position: 'left' }),
         y2: axisOpts({ position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }),
     });
@@ -241,26 +288,39 @@ function buildAllCharts(rows) {
     charts.signal = buildChart('chart-signal', [
         { label: 'SNR dB',   data: toPoints(rows, 'snr'), borderColor: COLORS.green, yAxisID: 'y' },
         { label: 'RSSI dBm', data: toPoints(rows, 'rssi'), borderColor: COLORS.grey, yAxisID: 'y2' },
-    ], {
-        x:  { type: 'time', ticks: axisOpts().ticks },
-        y:  axisOpts({ position: 'left' }),
-        y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }),
+    ], { 
+        y: axisOpts({ position: 'left' }), 
+        y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }) 
     });
 }
 
 function appendLivePoint(msg) {
+    if (!selectedNodeId || Number(msg.from_int) !== selectedNodeId) return;
+
     const ts = new Date();
+    const rangeStart = Date.now() - getMaxAgeMs();
+
     Object.entries(CHART_FIELDS).forEach(([chartKey, fields]) => {
         const chart = charts[chartKey];
         if (!chart) return;
+
         let changed = false;
+
         fields.forEach(([field, dsIndex]) => {
             if (msg[field] != null) {
-                chart.data.datasets[dsIndex].data.push({ x: ts, y: msg[field] });
+                const dataset = chart.data.datasets[dsIndex];
+                dataset.data.push({ x: ts, y: msg[field] });
+                pruneOldData(dataset);
                 changed = true;
             }
         });
-        if (changed) chart.update('none'); // skip animation, just redraw
+
+        if (changed) {
+            // Update visible window
+            chart.options.scales.x.min = rangeStart;
+            chart.options.scales.x.max = Date.now();
+            chart.update('none');
+        }
     });
 }
 
@@ -320,22 +380,25 @@ async function renderNodeList() {
     }
 }
 
+// Range button handling
 document.querySelectorAll('.range-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
         document.querySelectorAll('.range-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
+
         currentHours = Number(btn.dataset.hours);
-        if (selectedNodeId != null) selectNode(selectedNodeId);
+
+        if (selectedNodeId != null) {
+            const rows = await fetchTelemetryHistory(selectedNodeId, currentHours);
+            buildAllCharts(rows);
+        }
     });
 });
 
-// Page-specific hook, called from app.js's _handleTelemetry() on every
-// telemetry_update WS message — see _handleTelemetry in app.js.
+// Live telemetry handler
 window.onTelemetryUpdate = function (msg) {
     renderNodeList();
-    if (selectedNodeId != null && Number(msg.from_int) === selectedNodeId) {
-        appendLivePoint(msg);
-    }
+    appendLivePoint(msg);
 };
 
 renderNodeList();
