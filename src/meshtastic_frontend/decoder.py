@@ -40,6 +40,45 @@ from .queues import raw_packet_queue, db_queue, broadcast_queue
 
 logger = logging.getLogger(__name__)
 
+class MeshPacketDeduplicator:
+    """
+    Lightweight in-memory deduplicator for Meshtastic packets.
+    Uses (from_node, packet_id) as the uniqueness key.
+    """
+    
+    def __init__(self, window_seconds: int = 30, max_per_node: int = 2000):
+        self.seen = defaultdict(lambda: deque(maxlen=max_per_node))
+        self.window_seconds = window_seconds
+        self.duplicate_count = 0
+
+    def is_duplicate(self, from_node: int, packet_id: int) -> bool:
+        """
+        Return True if this (from_node, packet_id) was seen recently.
+        
+        Args: from_node (int): The node ID of the packet.
+              packet_id (int): The packet ID of the packet.
+        
+        Returns: bool: Indicating whether this packet is a duplicate or not.
+        """
+        now = time.time()
+        key = packet_id
+        
+        node_queue = self.seen[from_node]
+
+        # Lazy cleanup of old entries
+        while node_queue and node_queue[0][0] < now - self.window_seconds:
+            node_queue.popleft()
+
+        # Check for duplicate
+        for ts, existing_id in node_queue:
+            if existing_id == key:
+                self.duplicate_count += 1
+                return True
+
+        # New packet
+        node_queue.append((now, key))
+        return False
+
 # All possible output fields, grouped by packet type for readability
 _RESULT_DEFAULTS: Dict[str, Any] = {
     # Always present
@@ -81,45 +120,6 @@ _RESULT_DEFAULTS: Dict[str, Any] = {
     "snr":              None,
     "rssi":             None,
 }
-
-class MeshPacketDeduplicator:
-    """
-    Lightweight in-memory deduplicator for Meshtastic packets.
-    Uses (from_node, packet_id) as the uniqueness key.
-    """
-    
-    def __init__(self, window_seconds: int = 30, max_per_node: int = 2000):
-        self.seen = defaultdict(lambda: deque(maxlen=max_per_node))
-        self.window_seconds = window_seconds
-        self.duplicate_count = 0
-
-    def is_duplicate(self, from_node: int, packet_id: int) -> bool:
-        """
-        Return True if this (from_node, packet_id) was seen recently.
-        
-        Args: from_node (int): The node ID of the packet.
-              packet_id (int): The packet ID of the packet.
-        
-        Returns: bool: Indicating whether this packet is a duplicate or not.
-        """
-        now = time.time()
-        key = packet_id
-        
-        node_queue = self.seen[from_node]
-
-        # Lazy cleanup of old entries
-        while node_queue and node_queue[0][0] < now - self.window_seconds:
-            node_queue.popleft()
-
-        # Check for duplicate
-        for ts, existing_id in node_queue:
-            if existing_id == key:
-                self.duplicate_count += 1
-                return True
-
-        # New packet
-        node_queue.append((now, key))
-        return False
 
 # Global deduplicator instance
 deduplicator = MeshPacketDeduplicator(window_seconds=30)
@@ -178,7 +178,8 @@ def decrypt_payload(payload: bytes, packet_id: int, from_node: int, key: bytes) 
         nonce = packet_id.to_bytes(8, 'little') + from_node.to_bytes(8, 'little')
         cipher = Cipher(algorithms.AES(key), modes.CTR(nonce), backend=default_backend())
         decryptor = cipher.decryptor()
-        return decryptor.update(payload) + decryptor.finalize()
+        decryptedPayload = decryptor.update(payload) + decryptor.finalize()
+        return decryptedPayload
     except Exception as e:
         logger.debug(f"Decryption failed: {e}")
         return None
@@ -201,7 +202,6 @@ def decode_payload(plaintext: bytes) -> Dict[str, Any]:
     try:
         data = mesh_pb2.Data()
         data.ParseFromString(plaintext)
-
         portnum = data.portnum
         result["portnum"]    = portnums_pb2.PortNum.Name(portnum)
         result["portnum_id"] = portnum

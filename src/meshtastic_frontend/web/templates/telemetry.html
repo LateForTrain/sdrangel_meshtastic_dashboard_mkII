@@ -138,10 +138,10 @@
             <div class="chart-card-title"><span>Environment</span><span class="latest" id="latest-env"></span></div>
             <canvas id="chart-env"></canvas>
         </div>
-        <div class="chart-card">
+        <!-- <div class="chart-card">
             <div class="chart-card-title"><span>Signal Quality</span><span class="latest" id="latest-signal"></span></div>
             <canvas id="chart-signal"></canvas>
-        </div>
+        </div> -->
     </div>
 
     <div class="telemetry-nodes">
@@ -285,13 +285,13 @@ function buildAllCharts(rows) {
         y2: axisOpts({ position: 'right', min: 0, max: 100, grid: { drawOnChartArea: false } }),
     });
 
-    charts.signal = buildChart('chart-signal', [
-        { label: 'SNR dB',   data: toPoints(rows, 'snr'), borderColor: COLORS.green, yAxisID: 'y' },
-        { label: 'RSSI dBm', data: toPoints(rows, 'rssi'), borderColor: COLORS.grey, yAxisID: 'y2' },
-    ], { 
-        y: axisOpts({ position: 'left' }), 
-        y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }) 
-    });
+    // charts.signal = buildChart('chart-signal', [
+    //     { label: 'SNR dB',   data: toPoints(rows, 'snr'), borderColor: COLORS.green, yAxisID: 'y' },
+    //     { label: 'RSSI dBm', data: toPoints(rows, 'rssi'), borderColor: COLORS.grey, yAxisID: 'y2' },
+    // ], { 
+    //     y: axisOpts({ position: 'left' }), 
+    //     y2: axisOpts({ position: 'right', grid: { drawOnChartArea: false } }) 
+    // });
 }
 
 function appendLivePoint(msg) {

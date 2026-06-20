@@ -9,7 +9,9 @@
     "want_ack":  false,
     "via_mqtt":  false,
     "hop_start": 3,
-    "channel":   "0x42"
+    "channel":   "0x42",
+    "rx_rssi":   -92,
+    "rx_snr":    6.1
   },
   "payload": {
     "portnum":         "TEXT_MESSAGE_APP",
