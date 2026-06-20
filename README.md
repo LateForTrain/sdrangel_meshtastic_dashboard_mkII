@@ -1,139 +1,232 @@
-# Meshtastic SDRangel Frontend (mkII)
+# Meshtastic Monitor
 
-## 🎯 Goal
-Build a Python application that receives Meshtastic packets via UDP (from SDRangel), decodes them using the official meshtastic Python library, stores the data, and serves a real-time web interface.
+> **A real-time web dashboard for Meshtastic packets decoded via SDRangel**
 
-## 🧰 Tech Stack
-- Python 3.11+
-- Asyncio + `asyncio.Queue`
-- FastAPI (with WebSockets)
-- SQLAlchemy with aiosqllet
-- Official `meshtastic` Python library (decoding only)
-- Pydantic for validation
-- Jinja2 for templating
-- Uvicorn ASGI server
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Status](https://img.shields.io/badge/status-active_development-orange.svg)]()
 
-## 🧠 Key Design Decisions
-- Pure asyncio (no threads)
-- Central queues for communication
-- Reliable task wrapper that auto-restarts crashed tasks
-- Clean separation of concerns
-- WebSocket support for real-time updates
+## Table of Contents
+- [🚀 Quick Start](#-quick-start)
+- [✨ Features](#-features)
+- [📸 Screenshots](#-screenshots)
+- [📦 Installation](#-installation)
+- [⚙️ Configuration](#️-configuration)
+- [🧠 Architecture](#-architecture)
+- [🧰 Tech Stack](#-tech-stack)
+- [🌐 Web Interface](#-web-interface)
+- [🛠️ How to Run](#️-how-to-run)
+- [🧪 Testing](#-testing)
+- [🩹 Troubleshooting](#-troubleshooting)
+- [🤝 Contributing](#-contributing)
+- [🚧 Project Status & Roadmap](#-project-status--roadmap)
+- [📜 License](#-license)
 
-## 📦 Installation
+---
 
-1. Ensure you have Python 3.11+ installed.
-2. Clone the repository and navigate to the project directory.
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   Or if using uv:
-   ```bash
-   uv sync
-   ```
-- Clean separation of concerns
-- WebSocket support for real-time updates
+## 🚀 Quick Start
 
-## Installation
-
-1. Ensure you have Python 3.11+ installed.
-2. Clone the repository and navigate to the project directory.
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-   Or if using uv:
-   ```bash
-   uv sync
-   ```
-
-## Folder Structure
-```
-meshtastic-sdrangel-frontend/
-├── src/
-│   └── meshtastic_frontend/
-│       ├── __init__.py
-│       ├── main.py                 # Main entry point
-│       ├── config.py               # Configuration management
-│       ├── models.py               # Data models
-│       ├── queues.py               # Async queues
-│       ├── task_manager.py         # Task management
-│       ├── udp_listener.py         # UDP packet listener
-│       ├── decoder.py              # Meshtastic packet decoder
-│       ├── db_manager.py           # Database operations
-│       └── web/
-│           ├── __init__.py
-│           ├── app.py              # FastAPI application
-│           ├── routes.py           # API routes
-│           ├── static/
-│           │   └── test.html       # Test page
-│           └── templates/
-│               └── index.html      # Main dashboard template
-├── tests/
-├── data/                           # Data storage
-├── pyproject.toml                  # Project configuration
-├── requirements.txt                # Python dependencies
-├── start.py                        # Alternative entry point
-├── README.md
-├── LICENSE
-└── .env                            # Environment variables
-```
-
-## How to Run
-
-### Using the main module:
 ```bash
+# 1. Clone the repository
+git clone https://github.com/YOURUSERNAME/meshtastic-monitor.git
+cd meshtastic-monitor
+
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate    # On Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Configure (copy example if available)
+cp config.toml.example config.toml   # Edit as needed
+
+# 5. Start SDRangel with Meshtastic plugin sending UDP to localhost:9999
+
+# 6. Run the dashboard
 python -m src.meshtastic_frontend.main
 ```
 
-### Using the start script:
+Open your browser and go to **http://localhost:8000**
+
+**Verification**: Send a text message from any Meshtastic device on the same network. It should appear in the Messages view within seconds.
+
+---
+
+## ✨ Features
+
+- Real-time message viewing with clean timestamps
+- Interactive map showing node positions
+- Telemetry dashboard (battery, environment sensors, etc.)
+- Live node list with hardware details
+- Persistent SQLite storage for history and analysis
+- WebSocket-powered live updates
+- Pure asyncio architecture (no threads)
+- Self-contained frontend (fonts + Chart.js included)
+
+**Known Limitations**:
+- No authentication yet (local/trusted network only)
+- Currently focused on new messages (position/telemetry events coming soon)
+
+---
+
+## 📸 Screenshots
+
+*(Add dashboard screenshots/GIFs here)*
+
+---
+
+## 📦 Installation
+
+1. Python 3.11 or higher
+2. Follow the [Quick Start](#-quick-start) above
+3. Ensure SDRangel is running with the Meshtastic plugin active and UDP output enabled
+
+Optional tools:
+- `uv` for faster dependency management (`uv sync`)
+
+---
+
+## ⚙️ Configuration
+
+Configuration is done via `config.toml` (with `.env` override support).
+
+**Key settings** (`config.toml`):
+
+```toml
+UDP_HOST = "0.0.0.0"
+UDP_PORT = 9999
+API_HOST = "0.0.0.0"
+API_PORT = 8000
+MESH_KEY = "1PG7OiApB1nwvP+rz05pAQ=="   # Base64 AES key for your mesh
+```
+
+Full configuration reference is available in `src/meshtastic_frontend/config.py`.
+
+Database is stored by default in the `data/` folder.
+
+---
+
+## 🧠 Architecture
+
+### Overview
+Event-driven pipeline using asyncio queues:
+
+```mermaid
+flowchart LR
+    A[SDRangel UDP] --> B[UDP Listener]
+    B --> C[Raw Queue]
+    C --> D[Decoder]
+    D --> E[DB Queue]
+    D --> F[Broadcast Queue]
+    E --> G[DB Manager]
+    F --> H[WebSocket Clients]
+```
+
+### Core Components
+- **UDP Listener**: Receives packets from SDRangel
+- **Decoder**: Uses official `meshtastic` library + AES decryption
+- **DB Manager**: SQLite persistence + event generation
+- **Broadcaster**: Real-time WebSocket updates
+
+Detailed component responsibilities and queue capacities are documented in the source code.
+
+---
+
+## 🧰 Tech Stack
+
+- **Backend**: Python 3.11+, FastAPI, SQLAlchemy + aiosqlite
+- **Async**: Pure asyncio + queues
+- **Frontend**: Jinja2 + vanilla JS + Chart.js
+- **Database**: SQLite
+- **Decoding**: Official `meshtastic` Python library
+
+---
+
+## 🌐 Web Interface
+
+Modern split-pane dashboard with:
+- Messages tab
+- Map view
+- Telemetry overview
+- Node list
+- Configuration page
+
+All updates happen live via WebSockets. No page refreshes needed.
+
+---
+
+## 🛠️ How to Run
+
 ```bash
+# Development
+python -m src.meshtastic_frontend.main
+
+# Or using the helper
 python start.py
 ```
 
-The application will start the FastAPI server on the configured host and port (default: http://localhost:8000).
+For production, use `uvicorn` directly with proper process management.
 
-## Configuration
+---
 
-Create a `.env` file in the root directory with your configuration settings. See `config.py` for available options.
+## 🧪 Testing
 
-## Development
-
-For development dependencies:
 ```bash
-pip install -e .[dev]
-```
-Or with uv:
-```bash
-uv sync --dev
-```
-
-Run tests:
-```bash
+pip install -r requirements-dev.txt   # if exists
 pytest
 ```
 
-Lint code:
-```bash
-ruff check .
-black .
-```
+Test messages can be injected via `test_msg.py`.
 
-## API Endpoints
+---
 
-- `GET /` - Main dashboard
-- `GET /ws` - WebSocket endpoint for real-time updates
-- Additional endpoints defined in `routes.py`
+## 🩹 Troubleshooting
 
-## Contributing
+**No packets appearing**
+- Verify SDRangel UDP destination (host/port)
+- Check firewall
+- Confirm `MESH_KEY` matches your mesh
 
-1. Fork the repository
+**WebSocket issues**
+- Check browser console
+- Ensure server is running on the expected port
+
+**Database problems**
+- Check permissions on `data/` folder
+
+---
+
+## 🤝 Contributing
+
+Contributions welcome!
+
+1. Fork the repo
 2. Create a feature branch
-3. Make your changes
-4. Run tests and linting
-5. Submit a pull request
+3. Make changes + tests
+4. Open a Pull Request
 
-## License
+See `ARCHITECTURE.md` (if present) for deeper guidelines.
 
-See LICENSE file for details.
+---
+
+## 🚧 Project Status & Roadmap
+
+- **Version**: 0.1.2 (mkII - asyncio rewrite)
+- **Status**: Active development
+
+**Next priorities**:
+- Full event broadcasting (position, telemetry, node updates)
+- Basic authentication
+- CSV export
+- Improved map clustering
+
+---
+
+## 📜 License
+
+MIT License — see [LICENSE](LICENSE) file for details.
+
+---
+
+> *An experiment that grew into a full application. For learning and enjoyment.*

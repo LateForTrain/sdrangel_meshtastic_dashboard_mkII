@@ -218,3 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 data/app.db
 .aider*
+backend_specification.md
+gui.md
+backend_specification.md

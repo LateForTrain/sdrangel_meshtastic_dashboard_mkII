@@ -1,6 +1,6 @@
 # Meshtastic SDRangel Frontend (mkII) - Living Specification
 
-**Version:** 0.1.2  
+**Version:** 0.1.2  **TO BE UPDATED**
 **Last Updated:** 2026-06-04 
 **Status:** Active Development  
 
