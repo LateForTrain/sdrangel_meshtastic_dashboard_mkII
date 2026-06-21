@@ -1,5 +1,4 @@
-# Meshtastic Monitor
-
+# SDRangel Meshtastic Dashboard
 > **A real-time web dashboard for Meshtastic packets decoded via SDRangel**
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
@@ -7,20 +6,24 @@
 [![Status](https://img.shields.io/badge/status-active_development-orange.svg)]()
 
 ## Table of Contents
-- [🚀 Quick Start](#-quick-start)
-- [✨ Features](#-features)
-- [📸 Screenshots](#-screenshots)
-- [📦 Installation](#-installation)
-- [⚙️ Configuration](#️-configuration)
-- [🧠 Architecture](#-architecture)
-- [🧰 Tech Stack](#-tech-stack)
-- [🌐 Web Interface](#-web-interface)
-- [🛠️ How to Run](#️-how-to-run)
-- [🧪 Testing](#-testing)
-- [🩹 Troubleshooting](#-troubleshooting)
-- [🤝 Contributing](#-contributing)
-- [🚧 Project Status & Roadmap](#-project-status--roadmap)
-- [📜 License](#-license)
+- [SDRangel Meshtastic Dashboard](#sdrangel-meshtastic-dashboard)
+  - [Table of Contents](#table-of-contents)
+  - [🚀 Quick Start](#-quick-start)
+  - [✨ Features](#-features)
+  - [📸 Screenshots](#-screenshots)
+  - [📦 Installation](#-installation)
+  - [⚙️ Configuration](#️-configuration)
+  - [🧠 Architecture](#-architecture)
+    - [Overview](#overview)
+    - [Core Components](#core-components)
+  - [🧰 Tech Stack](#-tech-stack)
+  - [🌐 Web Interface](#-web-interface)
+  - [🛠️ How to Run](#️-how-to-run)
+  - [🧪 Testing](#-testing)
+  - [🩹 Troubleshooting](#-troubleshooting)
+  - [🤝 Contributing](#-contributing)
+  - [🚧 Project Status \& Roadmap](#-project-status--roadmap)
+  - [📜 License](#-license)
 
 ---
 
@@ -28,8 +31,8 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/YOURUSERNAME/meshtastic-monitor.git
-cd meshtastic-monitor
+git clone https://github.com/LateForTrain/sdrangel_meshtastic_dashboard_mkII.git
+cd sdrangel_meshtastic_dashboard_mkII
 
 # 2. Create virtual environment
 python3 -m venv .venv
@@ -38,13 +41,14 @@ source .venv/bin/activate    # On Windows: .venv\Scripts\activate
 # 3. Install dependencies
 pip install -r requirements.txt
 
-# 4. Configure (copy example if available)
-cp config.toml.example config.toml   # Edit as needed
+# 4. Configure config.toml
 
 # 5. Start SDRangel with Meshtastic plugin sending UDP to localhost:9999
 
 # 6. Run the dashboard
 python -m src.meshtastic_frontend.main
+or
+python start.py
 ```
 
 Open your browser and go to **http://localhost:8000**
@@ -66,7 +70,6 @@ Open your browser and go to **http://localhost:8000**
 
 **Known Limitations**:
 - No authentication yet (local/trusted network only)
-- Currently focused on new messages (position/telemetry events coming soon)
 
 ---
 
@@ -172,28 +175,13 @@ For production, use `uvicorn` directly with proper process management.
 
 ## 🧪 Testing
 
-```bash
-pip install -r requirements-dev.txt   # if exists
-pytest
-```
-
-Test messages can be injected via `test_msg.py`.
+Test messages can be injected via `test_msg.py`. Active the task in the main.py.
 
 ---
 
 ## 🩹 Troubleshooting
 
-**No packets appearing**
-- Verify SDRangel UDP destination (host/port)
-- Check firewall
-- Confirm `MESH_KEY` matches your mesh
 
-**WebSocket issues**
-- Check browser console
-- Ensure server is running on the expected port
-
-**Database problems**
-- Check permissions on `data/` folder
 
 ---
 
@@ -206,21 +194,13 @@ Contributions welcome!
 3. Make changes + tests
 4. Open a Pull Request
 
-See `ARCHITECTURE.md` (if present) for deeper guidelines.
-
 ---
 
 ## 🚧 Project Status & Roadmap
 
 - **Version**: 0.1.2 (mkII - asyncio rewrite)
 - **Status**: Active development
-
-**Next priorities**:
-- Full event broadcasting (position, telemetry, node updates)
-- Basic authentication
-- CSV export
-- Improved map clustering
-
+- 
 ---
 
 ## 📜 License
