@@ -75,7 +75,11 @@ Open your browser and go to **http://localhost:8000**
 
 ## 📸 Screenshots
 
-*(Add dashboard screenshots/GIFs here)*
+Message View
+![img](/assets/message.png)
+
+Map View
+![img](/assets/map.png)
 
 ---
 

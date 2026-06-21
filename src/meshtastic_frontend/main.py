@@ -43,7 +43,7 @@ async def lifespan(app: FastAPI):
         asyncio.create_task(reliable_task(broadcaster_task, "Broadcaster", restart_delay=2.0)),
         asyncio.create_task(reliable_task(sdr_status_monitor_task, "SDR_HeartBeat", restart_delay=2.0)),
         #asyncio.create_task(reliable_task(inject_test_packet, "Test Module", restart_delay=2.0)),
-        #asyncio.create_task(reliable_task(run, "Multi Test Module", restart_delay=2.0)),
+        asyncio.create_task(reliable_task(run, "Multi Test Module", restart_delay=2.0)),
     ]
 
     logger.info("Background tasks started")
