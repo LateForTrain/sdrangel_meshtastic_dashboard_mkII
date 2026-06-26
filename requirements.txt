@@ -15,6 +15,9 @@ cryptography==48.0.0
 # Background task reliability & utilities
 python-dotenv==1.2.2
 
+# Asynchronous HTTP client and server
+aiohttp
+
 # Optional but recommended for dashboard later
 jinja2==3.1.6
 websockets==16.0
